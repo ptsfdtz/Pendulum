@@ -1,47 +1,125 @@
 {
-  "schema_version": 1,
   "hardware": {
     "ni6602": {
       "device": "Dev1",
       "expected_product": "PCI-6602",
+      "left_limit_active_high": true,
+      "left_limit_line": "Dev1/port0/line0",
       "motor_counter": "Dev1/ctr0",
       "motor_encoder_a_terminal": "DEFAULT",
       "motor_encoder_b_terminal": "DEFAULT",
-      "motor_encoder_pulses_per_revolution": 2000,
-      "motor_encoder_decoding": "X4",
-      "motor_encoder_counts_per_revolution": 8000,
-      "motor_encoder_counts_per_mm": null,
       "motor_encoder_calibration": null,
+      "motor_encoder_counts_per_mm": null,
+      "motor_encoder_counts_per_revolution": 8000,
+      "motor_encoder_decoding": "X4",
+      "motor_encoder_pulses_per_revolution": 2000,
       "pendulum_counter": "Dev1/ctr1",
-      "left_limit_line": "Dev1/port0/line0",
-      "left_limit_active_high": true,
-      "right_limit_line": "Dev1/port0/line2",
+      "pendulum_encoder_a_terminal": "DEFAULT",
+      "pendulum_encoder_b_terminal": "DEFAULT",
+      "pendulum_encoder_decoding": "X4",
       "right_limit_active_high": true,
-      "servo_enable_line": "Dev1/port0/line3",
-      "servo_active_high": true
+      "right_limit_line": "Dev1/port0/line2",
+      "servo_active_high": true,
+      "servo_enable_line": "Dev1/port0/line3"
     },
     "pci1723": {
-      "device_description": "PCI-1723,BID#15",
       "ao_channel": 0,
-      "safe_voltage": 0.0,
-      "calibrated_zero_voltage": null,
-      "zero_voltage_requires_calibration": true,
-      "minimum_voltage": -10.0,
+      "calibrated_zero_voltage": -0.00152587890625,
+      "device_description": "PCI-1723,BID#15",
       "maximum_voltage": 10.0,
+      "minimum_voltage": -10.0,
+      "motor_zero_calibration": {
+        "dac_lsb_voltage": 0.00030517578125,
+        "final_absolute_speed_counts_per_second": 4.478971452976847,
+        "final_signed_speed_counts_per_second": -4.478971452976847,
+        "maximum_accepted_speed_counts_per_second": 5.0,
+        "target_speed_counts_per_second": 2.0,
+        "timestamp_utc": "2026-08-31T07:05:49Z",
+        "voltage": -0.00152587890625
+      },
+      "negative_voltage_cart_direction": "RIGHT",
       "positive_voltage_cart_direction": "LEFT",
-      "negative_voltage_cart_direction": "RIGHT"
+      "safe_voltage": 0.0,
+      "zero_voltage_requires_calibration": false
     }
+  },
+  "balance_control": {
+    "drive_model": "SGD7S-180A00A002",
+    "drive_control_mode": "ANALOG_TORQUE",
+    "pn400_setting": 30,
+    "rated_torque_command_voltage": 3.0,
+    "analog_torque_zero_voltage": 0.0,
+    "analog_torque_zero_calibrated": true,
+    "frequency_hz": 500,
+    "pendulum_pulses_per_revolution": 2000,
+    "pendulum_counts_per_revolution": 8000,
+    "angular_rate_filter_alpha": 0.15,
+    "angle_gain_rated_torque_per_radian": 0.08333333333333333,
+    "angular_rate_gain_rated_torque_per_radian_per_second": 0.006666666666666667,
+    "default_polarity": 1,
+    "maximum_absolute_rated_torque_fraction": 1.0,
+    "telemetry_divider": 10
+  },
+  "home_center": {
+    "away_direction_test_ms": 300,
+    "backoff_timeout_seconds": 5.0,
+    "center_fast_voltage": 0.1,
+    "center_mid_voltage": 0.05,
+    "center_settle_ms": 200,
+    "center_slow_voltage": 0.015,
+    "center_timeout_seconds": 30.0,
+    "center_tolerance_fraction": 0.0005,
+    "escape_counts": 200,
+    "escape_voltage": 0.03,
+    "fine_voltage": 0.02,
+    "maximum_reuse_center_error_counts": 50,
+    "maximum_travel_counts": 33253,
+    "minimum_center_tolerance_counts": 10,
+    "minimum_travel_counts": 1000,
+    "poll_period_ms": 5,
+    "search_timeout_seconds": 60.0,
+    "search_voltage": 0.1
+  },
+  "home_center_calibration": null,
+  "logging": {
+    "directory": "logs",
+    "queue_capacity": 4096
+  },
+  "manual_console": {
+    "dashboard_refresh_ms": 100,
+    "limit_debounce_samples": 3,
+    "monitor_period_ms": 2
+  },
+  "motor_zero_calibration": {
+    "coarse_end_voltage": 0.005,
+    "coarse_repeats": 2,
+    "coarse_sample_seconds": 0.7,
+    "coarse_settle_seconds": 0.5,
+    "coarse_start_voltage": -0.005,
+    "coarse_step_voltage": 0.001,
+    "dac_bits": 16,
+    "final_precondition_codes": 2,
+    "final_precondition_seconds": 0.5,
+    "final_repeats": 5,
+    "final_sample_seconds": 1.5,
+    "final_settle_seconds": 0.7,
+    "fine_half_range_voltage": 0.0015,
+    "fine_precondition_codes": 3,
+    "fine_precondition_seconds": 0.8,
+    "fine_repeats": 3,
+    "fine_sample_seconds": 1.0,
+    "fine_settle_seconds": 0.45,
+    "maximum_accepted_speed_counts_per_second": 5.0,
+    "servo_settle_seconds": 3.0,
+    "target_speed_counts_per_second": 2.0,
+    "verification_repeats": 7,
+    "verification_sample_seconds": 2.0,
+    "verification_settle_seconds": 1.5,
+    "voltage_limit": 0.1
   },
   "safety": {
     "allow_safe_output_test": false,
     "output_test_confirmation": ""
   },
-"manual_console": {
-  "monitor_period_ms": 5,
-  "limit_debounce_samples": 3
-},
-  "logging": {
-    "directory": "logs",
-    "queue_capacity": 4096
-  }
+  "schema_version": 1
 }

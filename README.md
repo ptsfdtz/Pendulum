@@ -5,7 +5,8 @@ Phase 1 safety and hardware self-test for a single-stage inverted pendulum using
 - NI PCI-6602 through NI-DAQmx
 - Advantech PCI-1723 through DAQNavi/BDaq
 
-No closed-loop controller or homing routine is implemented in Phase 1.
+The manual console includes a first-stage upright LQR controller. It intentionally excludes the
+untrusted cart encoder from feedback: place the cart at the physical center before every run.
 
 The motor encoder calibration tool is read-only: it never creates AO or Servo output tasks. It
 captures two stable raw counter values around a manually measured cart movement and atomically
@@ -31,14 +32,104 @@ Start the interactive console with:
 powershell -ExecutionPolicy Bypass -File .\scripts\start_manual_console.ps1
 ```
 
+In an interactive Windows terminal the console opens a continuously refreshed dashboard showing:
+
+- Motor encoder `ctr0` signed accumulated X4 position and count rate
+- Pendulum encoder `ctr1` signed accumulated X4 position and count rate
+- Left/right raw and debounced limit states
+- Servo state, AO0 voltage, inferred cart motion direction, and calibration state
+- Recent hardware and command events plus an inline command prompt
+
+The dashboard refresh rate is configured by `manual_console.dashboard_refresh_ms`. Redirected or
+piped input automatically uses the plain line-oriented display instead of ANSI full-screen mode.
+
 Use `status`, `limits`, `encoder`, `log`, and `help` to inspect the hardware. `servo on` writes
 AO0=0 V and enables the Servo immediately; it stays enabled until `servo off` or a stop event.
+
+For upright balance, first let the pendulum hang freely and capture the downward zero:
+
+```text
+balance zero
+```
+
+Then move the cart to its physical center, manually hold the pendulum upright, and start:
+
+```text
+balance start +
+```
+
+The A-axis encoder is configured as 2000 PPR with X4 decoding: 8000 counts/revolution,
+0.045 degrees/count. `balance zero` records the freely hanging position. `balance start` captures
+the current manually held upright count as the stabilization target; it does not assume that the
+mechanical upright count is exactly zero or persist it across process starts. The downward-to-
+upright difference should be near half a revolution (about 4000 counts) and is logged for
+inspection, but it does not block starting. The controller uses pendulum angle and angular rate
+relative to the captured target only; cart position and velocity are forced to zero in the state
+vector. Both physical limits still command AO0=0 V and Servo OFF.
+
+The first-stage controller commands the Yaskawa SGD7S-180A00A002 in analog torque mode. With
+`Pn400=30`, 3.0 V represents 100% rated torque. The controller computes a signed fraction of rated
+torque and converts it with:
+`AO0 = torque_zero_voltage + rated_torque_fraction * 3.0 V`. Use `balance start +` or
+`balance start -` to choose the relationship
+between increasing A-axis counts and AO direction. If one polarity pushes the cart opposite the
+direction of fall, stop and use the other polarity. `balance start` without a sign uses
+`balance_control.default_polarity`. Initial gains and the AO clamp are configured under
+`balance_control`.
+
+Before tuning, hold AO0 at exactly 0 V and use the SGD7S `Fn009` function to automatically adjust
+the analog speed/torque reference offset, or `Fn00B` for manual torque-reference offset adjustment.
+After completing the drive-side adjustment, set `analog_torque_zero_calibrated` to `true`; use
+`analog_torque_zero_voltage` only for a measured residual software trim. The previous velocity-mode
+motor-zero result must not be reused as a torque-reference offset.
+
+The commissioned maximum command is 100% rated torque, which is 3.0 V with Pn400=30. The balance
+loop consumes each timestamped A-axis encoder sample exactly once, so its angular-rate estimate is
+not calculated repeatedly from a stale count. `maximum_absolute_rated_torque_fraction` changes
+actuator authority without recompiling.
 
 The console supports `servo on`, `servo off`, `voltage <volts>` for a held output, and
 `voltage <volts> <duration_ms>` for an optional timed test. Voltages may use the configured PCI-1723
 range of -10 V to +10 V. Either stable limit, monitoring failure, Ctrl+C, and normal exit command
 AO0 to 0 V before Servo OFF. A limit stop does not latch; after the limit clears, Servo can be
 enabled again.
+
+Run the motor zero-drift calibration from the same console:
+
+```text
+calibrate zero
+```
+
+The command follows the reference MATLAB sequence: Servo ON stabilization, coarse scan,
+bidirectional DAC-code scan, deadband/hysteresis selection, adjacent-code refinement, and seven
+long verification samples. A successful result is atomically saved as
+`hardware.pci1723.calibrated_zero_voltage` and remains applied with Servo ON. A limit event aborts
+calibration and commands AO0=0 V before Servo OFF. The full run takes roughly 2-3 minutes with the
+default parameters in `motor_zero_calibration`.
+
+Return the stage to its mechanical center from the console:
+
+```text
+home center
+```
+
+On the first run, the command probes and refines both active-HIGH limits and atomically stores the
+measured travel, center, and final error in `config.json`. Later runs reuse the stored travel when
+the previous center error is no greater than `home_center.maximum_reuse_center_error_counts`; only
+one limit is then needed to re-establish the incremental encoder reference. Use `home calibrate` to
+force a fresh two-limit calibration. The settled position is checked after outputs stop; if a reused
+result exceeds the configured error threshold, the same command automatically falls back to a full
+two-limit calibration. Every path finishes at AO0=0 V and Servo OFF. After a limit stop, the release
+phase accepts only motion away from that active limit.
+
+The first boundary is intentionally not assumed to be LEFT or RIGHT. The controller accepts the
+first limit actually reached, learns the AO direction from that event, and then requires the second
+event to be the opposite limit before calculating the center. If the console starts while a limit
+is already active, `home_center.away_direction_test_ms` controls the low-voltage release-direction
+test.
+
+The confirmed maximum motor-encoder span between physical limits is 33253 counts. A two-limit
+measurement above `home_center.maximum_travel_counts` is rejected and is never persisted or reused.
 
 ## Build
 

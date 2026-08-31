@@ -33,6 +33,9 @@ The configuration authorization was disabled again immediately after the test.
 - [x] Servo ON at AO0 = 0 V causes cart drift
 - [x] Positive AO0 voltage moves the cart LEFT (measured with +0.02 V)
 - [x] Negative AO0 voltage moves the cart RIGHT (measured with -0.02 V)
+- [x] Servo drive: Yaskawa `SGD7S-180A00A002`, manually selected analog torque mode
+- [x] `Pn400 = 30`: 3.0 V torque reference equals 100% rated torque
+- [ ] Analog torque-reference offset adjusted with drive function `Fn009` or `Fn00B`
 - [ ] Stable motor zero voltage (`calibrated_zero_voltage`) measured and saved
 
 `safe_voltage` remains 0 V for emergency shutdown together with Servo OFF. It must not be treated

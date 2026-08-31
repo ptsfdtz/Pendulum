@@ -31,8 +31,13 @@ find_library(NIDAQMX_LIBRARY NAMES NIDAQmx PATHS "${NIDAQMX_ROOT}/lib64/msvc" NO
 find_path(BDAQ_INCLUDE_DIR bdaqctrl.h PATHS "${ADVANTECH_DAQNAVI_ROOT}/Inc" NO_DEFAULT_PATH REQUIRED)
 
 add_library(pendulum_core
+    src/calibration/HomeCenterController.cpp
     src/calibration/MotorEncoderCalibration.cpp
+    src/calibration/MotorZeroCalibrator.cpp
     src/config/Config.cpp
+    src/control/AnglePdController.cpp
+    src/control/LqrController.cpp
+    src/control/PendulumStateEstimator.cpp
     src/hardware/NI6602.cpp
     src/hardware/PCI1723.cpp
     src/logging/AsyncLogger.cpp
@@ -58,6 +63,7 @@ target_compile_options(pendulum_encoder_calibrate PRIVATE /W4 /permissive- /EHsc
 
 add_executable(pendulum_manual_console src/tools/ManualConsoleMain.cpp)
 target_link_libraries(pendulum_manual_console PRIVATE pendulum_core)
+target_compile_definitions(pendulum_manual_console PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(pendulum_manual_console PRIVATE /W4 /permissive- /EHsc)
 
 if(PENDULUMLAB_BUILD_TESTS)

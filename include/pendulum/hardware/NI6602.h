@@ -39,6 +39,12 @@ public:
     std::uint32_t readMotorEncoderRaw();
     bool motorEncoderConfigured() const noexcept;
 
+    void configurePendulumEncoderRaw(const std::string& counter,
+                                     const std::string& phaseATerminal,
+                                     const std::string& phaseBTerminal);
+    std::uint32_t readPendulumEncoderRaw();
+    bool pendulumEncoderConfigured() const noexcept;
+
     void configureLimitInputs(const std::string& leftLine,
                               bool leftActiveHigh,
                               const std::string& rightLine,

@@ -61,6 +61,7 @@ private:
 
 struct NI6602::Impl {
     Task motorEncoderTask;
+    Task pendulumEncoderTask;
     Task leftLimitTask;
     Task rightLimitTask;
     Task servoTask;
@@ -176,6 +177,63 @@ std::uint32_t NI6602::readMotorEncoderRaw() {
 
 bool NI6602::motorEncoderConfigured() const noexcept {
     return impl_ && impl_->motorEncoderTask.valid();
+}
+
+void NI6602::configurePendulumEncoderRaw(const std::string& counter,
+                                         const std::string& phaseATerminal,
+                                         const std::string& phaseBTerminal) {
+    if (counter.empty() || counter == "UNCONFIRMED" || phaseATerminal.empty() ||
+        phaseATerminal == "UNCONFIRMED" || phaseBTerminal.empty() ||
+        phaseBTerminal == "UNCONFIRMED") {
+        throw std::invalid_argument("Invalid or unconfirmed pendulum encoder configuration");
+    }
+    const bool useDefaultRouting = phaseATerminal == "DEFAULT" && phaseBTerminal == "DEFAULT";
+    const bool useExplicitRouting = phaseATerminal != "DEFAULT" &&
+                                    phaseBTerminal != "DEFAULT" &&
+                                    phaseATerminal != phaseBTerminal;
+    if (!useDefaultRouting && !useExplicitRouting) {
+        throw std::invalid_argument(
+            "Pendulum encoder A/B routing must both be DEFAULT or distinct terminals");
+    }
+
+    impl_->pendulumEncoderTask.clear();
+    checkDaq(DAQmxCreateTask("PendulumLabPendulumEncoder",
+                             impl_->pendulumEncoderTask.address()),
+             "DAQmxCreateTask(pendulum encoder)");
+    try {
+        // pulsesPerRev does not scale raw DAQmx_Val_Ticks reads, but DAQmx requires it nonzero.
+        checkDaq(DAQmxCreateCIAngEncoderChan(
+                     impl_->pendulumEncoderTask.get(), counter.c_str(), "", DAQmx_Val_X4,
+                     false, 0.0, DAQmx_Val_AHighBHigh, DAQmx_Val_Ticks, 1, 0.0, nullptr),
+                 "DAQmxCreateCIAngEncoderChan(pendulum encoder)");
+        if (!useDefaultRouting) {
+            checkDaq(DAQmxSetCIEncoderAInputTerm(impl_->pendulumEncoderTask.get(), "",
+                                                 phaseATerminal.c_str()),
+                     "DAQmxSetCIEncoderAInputTerm(pendulum encoder)");
+            checkDaq(DAQmxSetCIEncoderBInputTerm(impl_->pendulumEncoderTask.get(), "",
+                                                 phaseBTerminal.c_str()),
+                     "DAQmxSetCIEncoderBInputTerm(pendulum encoder)");
+        }
+        checkDaq(DAQmxStartTask(impl_->pendulumEncoderTask.get()),
+                 "DAQmxStartTask(pendulum encoder)");
+    } catch (...) {
+        impl_->pendulumEncoderTask.clear();
+        throw;
+    }
+}
+
+std::uint32_t NI6602::readPendulumEncoderRaw() {
+    if (!impl_->pendulumEncoderTask.valid()) {
+        throw std::logic_error("Pendulum encoder task has not been configured");
+    }
+    uInt32 value = 0;
+    checkDaq(DAQmxReadCounterScalarU32(impl_->pendulumEncoderTask.get(), 1.0, &value, nullptr),
+             "DAQmxReadCounterScalarU32(pendulum encoder)");
+    return value;
+}
+
+bool NI6602::pendulumEncoderConfigured() const noexcept {
+    return impl_ && impl_->pendulumEncoderTask.valid();
 }
 
 void NI6602::configureLimitInputs(const std::string& leftLine,
