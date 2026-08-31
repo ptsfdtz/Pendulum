@@ -62,8 +62,8 @@
   },
   "home_center": {
     "away_direction_test_ms": 300,
-    "backoff_timeout_seconds": 5.0,
-    "center_fast_voltage": 0.1,
+    "backoff_timeout_seconds": 4.2,
+    "center_fast_voltage": 0.15,
     "center_mid_voltage": 0.05,
     "center_settle_ms": 200,
     "center_slow_voltage": 0.015,
