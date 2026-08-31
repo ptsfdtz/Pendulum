@@ -13,6 +13,7 @@
 #include <Windows.h>
 #include <conio.h>
 #include <io.h>
+#include <mmsystem.h>
 
 #include <algorithm>
 #include <atomic>
@@ -40,6 +41,24 @@ using namespace std::chrono_literals;
 
 struct Options {
     std::filesystem::path configPath{"config/config.json"};
+};
+
+class WindowsTimerResolution final {
+public:
+    explicit WindowsTimerResolution(UINT milliseconds)
+        : milliseconds_(milliseconds), active_(timeBeginPeriod(milliseconds_) == TIMERR_NOERROR) {}
+
+    ~WindowsTimerResolution() {
+        if (active_) {
+            timeEndPeriod(milliseconds_);
+        }
+    }
+
+    bool active() const noexcept { return active_; }
+
+private:
+    UINT milliseconds_;
+    bool active_;
 };
 
 Options parseOptions(int argc, char* argv[]) {
@@ -75,6 +94,9 @@ public:
                   pendulum::safety::SafetyManager& safety)
         : config_(std::move(config)), configPath_(std::move(configPath)),
           logger_(logger), safety_(safety) {
+        balanceAngleGain_.store(config_.balanceControl.angleGainRatedTorquePerRadian);
+        balanceAngularRateGain_.store(
+            config_.balanceControl.angularRateGainRatedTorquePerRadianPerSecond);
         if (config_.homeCenterCalibration.has_value()) {
             homeCalibrationAvailable_.store(true);
             homeCalibrationTravel_.store(
@@ -86,11 +108,21 @@ public:
 
     int run() {
         config_.validateForManualConsole();
+        WindowsTimerResolution timerResolution(1);
         initializeHardware();
         monitor_ = std::jthread([this](std::stop_token stopToken) { monitor(stopToken); });
         waitForFirstSample();
+        const auto startupPendulumSample = latestPendulumSample();
+        pendulumDownCount_.store(startupPendulumSample.positionCounts);
+        pendulumZeroCaptured_.store(true);
+        record("Pendulum downward zero initialized automatically at count=" +
+               std::to_string(startupPendulumSample.positionCounts));
 
         record("Console ready");
+        if (!timerResolution.active()) {
+            record("Windows 1 ms timer resolution request failed",
+                   pendulum::logging::Level::Warning);
+        }
         dashboardMode_ = enableDashboardTerminal();
         if (dashboardMode_) {
             dashboard_ = std::jthread(
@@ -120,6 +152,9 @@ public:
         stopBalance("console exit");
         stopOutputs("console exit");
         monitor_.request_stop();
+        if (monitor_.joinable()) {
+            monitor_.join();
+        }
         return safety_.stopRequested() ? 1 : 0;
     }
 
@@ -190,13 +225,39 @@ private:
             }
             const int character = _getwch();
             if (character == 0 || character == 0xE0) {
-                static_cast<void>(_getwch());
+                const int extended = _getwch();
+                std::scoped_lock lock(inputMutex_);
+                if (extended == 72 && !commandHistory_.empty()) {
+                    if (commandHistoryCursor_ >= commandHistory_.size()) {
+                        commandHistoryDraft_ = inputBuffer_;
+                        commandHistoryCursor_ = commandHistory_.size();
+                    }
+                    if (commandHistoryCursor_ > 0) {
+                        --commandHistoryCursor_;
+                        inputBuffer_ = commandHistory_[commandHistoryCursor_];
+                    }
+                } else if (extended == 80 &&
+                           commandHistoryCursor_ < commandHistory_.size()) {
+                    ++commandHistoryCursor_;
+                    inputBuffer_ = commandHistoryCursor_ < commandHistory_.size()
+                                       ? commandHistory_[commandHistoryCursor_]
+                                       : commandHistoryDraft_;
+                }
                 continue;
             }
             if (character == '\r' || character == '\n') {
                 std::scoped_lock lock(inputMutex_);
                 auto command = inputBuffer_;
+                if (!command.empty() &&
+                    (commandHistory_.empty() || commandHistory_.back() != command)) {
+                    commandHistory_.push_back(command);
+                    if (commandHistory_.size() > 100) {
+                        commandHistory_.pop_front();
+                    }
+                }
                 inputBuffer_.clear();
+                commandHistoryCursor_ = commandHistory_.size();
+                commandHistoryDraft_.clear();
                 return command;
             }
             if (character == '\b') {
@@ -204,6 +265,7 @@ private:
                 if (!inputBuffer_.empty()) {
                     inputBuffer_.pop_back();
                 }
+                commandHistoryCursor_ = commandHistory_.size();
                 continue;
             }
             if (character >= 32 && character <= 126) {
@@ -211,6 +273,7 @@ private:
                 if (inputBuffer_.size() < 200) {
                     inputBuffer_.push_back(static_cast<char>(character));
                 }
+                commandHistoryCursor_ = commandHistory_.size();
             }
         }
         return std::nullopt;
@@ -234,9 +297,9 @@ private:
                 consoleWidth = info.srWindow.Right - info.srWindow.Left + 1;
                 consoleHeight = info.srWindow.Bottom - info.srWindow.Top + 1;
             }
-            const auto width = static_cast<std::size_t>(
-                std::max(20, std::min(consoleWidth, 120)));
-            const int eventRows = std::clamp(consoleHeight - 12, 0, 7);
+            const auto width = static_cast<std::size_t>(std::max(20, consoleWidth));
+            const bool showHelp = dashboardHelpVisible_.load();
+            const int eventRows = showHelp ? 0 : std::clamp(consoleHeight - 18, 0, 7);
 
             std::deque<std::string> events;
             {
@@ -277,8 +340,9 @@ private:
                 motion = "CALIBRATING MOTOR ZERO";
             } else if (!servo) {
                 motion = "IDLE / SERVO OFF";
-            } else if (std::abs(voltage) < 1e-12) {
-                motion = "SERVO ON / AO ZERO (DRIFT POSSIBLE)";
+            } else if (std::abs(voltage -
+                                config_.balanceControl.analogTorqueZeroVoltage) < 1e-12) {
+                motion = "SERVO ON / CALIBRATED TORQUE ZERO";
             } else {
                 motion = "MOVING " +
                          (voltage > 0.0 ? config_.pci1723.positiveVoltageCartDirection
@@ -311,7 +375,9 @@ private:
                     << std::setprecision(3) << balanceAngleDegrees_.load()
                     << " deg    rate " << balanceAngularRateDegrees_.load()
                     << " deg/s    polarity " << std::showpos
-                    << balancePolarity_.load();
+                    << balancePolarity_.load()
+                    << "    Kp " << std::noshowpos << balanceAngleGain_.load()
+                    << "    Kd " << balanceAngularRateGain_.load();
             screen << row(balance.str(), width) << '\n';
 
             screen << border("LIMITS / OUTPUT / MOTION", width) << '\n';
@@ -344,16 +410,36 @@ private:
             }
             screen << row(calibration.str(), width) << '\n';
 
-            screen << border("RECENT EVENTS", width) << '\n';
-            for (int index = 0; index < eventRows; ++index) {
-                const std::string event = index < static_cast<int>(events.size())
-                                              ? events[static_cast<std::size_t>(index)]
-                                              : "";
-                screen << "\x1b[2;37m" << row(event, width) << "\x1b[0m\n";
+            if (showHelp) {
+                screen << border("HELP / COMMANDS", width) << '\n';
+                screen << row("status  limits  encoder  log  help  quit", width) << '\n';
+                screen << row("servo on|off    voltage <V> [duration_ms]", width) << '\n';
+                screen << row("home center|calibrate    calibrate zero", width) << '\n';
+                screen << row("balance zero (recapture)    balance start [+|-]", width) << '\n';
+                screen << row("balance stop|status    balance gains", width) << '\n';
+                screen << row("balance kp <value>    balance kd <value>", width) << '\n';
+                screen << row("Up/Down command history    Backspace edit    Enter run", width)
+                       << '\n';
+            } else {
+                screen << border("RECENT EVENTS", width) << '\n';
+                for (int index = 0; index < eventRows; ++index) {
+                    const std::string event = index < static_cast<int>(events.size())
+                                                  ? events[static_cast<std::size_t>(index)]
+                                                  : "";
+                    screen << "\x1b[2;37m" << row(event, width) << "\x1b[0m\n";
+                }
             }
             screen << border("COMMAND", width) << '\n';
-            screen << row("balance zero   balance start [+|-]|stop|status   servo on|off   quit", width)
-                   << '\n';
+            if (!showHelp) {
+                screen << row("balance start [+|-]    balance zero (recapture)    balance stop|status", width)
+                       << '\n';
+                screen << row("balance kp <v>    balance kd <v>    balance gains", width)
+                       << '\n';
+                screen << row("servo on|off    voltage <V> [ms]    home center|calibrate", width)
+                       << '\n';
+                screen << row("status  limits  encoder  log  help  quit    Up/Down: history", width)
+                       << '\n';
+            }
             screen << row(message.empty() ? "Ready" : message, width) << '\n';
             screen << "\x1b[1;36m> \x1b[0m" << fit(input, width > 2 ? width - 2 : 0)
                    << "\x1b[J" << std::flush;
@@ -554,6 +640,9 @@ private:
         std::istringstream input(line);
         std::string command;
         input >> command;
+        if (command != "help") {
+            dashboardHelpVisible_.store(false);
+        }
         if (command == "help") {
             printHelp();
         } else if (command == "status") {
@@ -611,8 +700,17 @@ private:
                 stopBalance("operator balance stop");
             } else if (action == "status") {
                 printBalanceStatus();
+            } else if (action == "gains") {
+                printBalanceGains();
+            } else if (action == "kp" || action == "kd") {
+                double value = 0.0;
+                if (!(input >> value)) {
+                    notify("Usage: balance " + action + " <non-negative value>", true);
+                } else {
+                    setBalanceGain(action, value);
+                }
             } else {
-                notify("Usage: balance zero|start|stop|status", true);
+                notify("Usage: balance zero|start|stop|status|gains|kp <value>|kd <value>", true);
             }
         } else if (command == "home") {
             std::string target;
@@ -661,13 +759,18 @@ private:
                 notify("Servo ON rejected: safety state changed.", true);
                 return;
             }
-            analogOutput_.writeVoltage(0.0);
-            commandedVoltage_.store(0.0);
+            analogOutput_.writeVoltage(
+                config_.balanceControl.analogTorqueZeroVoltage);
+            commandedVoltage_.store(
+                config_.balanceControl.analogTorqueZeroVoltage);
             ni_.setServoEnabled(true);
             servoOn_.store(true);
         }
         record("Operator command: servo on");
-        notify("Servo ON; AO0=0 V.");
+        std::ostringstream message;
+        message << "Servo ON; AO0 calibrated torque zero="
+                << config_.balanceControl.analogTorqueZeroVoltage << " V.";
+        notify(message.str());
     }
 
     void setVoltage(double voltage, std::optional<std::uint32_t> durationMilliseconds) {
@@ -908,7 +1011,35 @@ private:
                (balancePolarity_.load() > 0 ? "+1" : "-1") +
                ", target_count=" + std::to_string(targetCount) +
                ", down_to_target_counts=" +
-               std::to_string(downToTargetCounts) + ".");
+               std::to_string(downToTargetCounts) +
+               ", Kp=" + std::to_string(balanceAngleGain_.load()) +
+               ", Kd=" + std::to_string(balanceAngularRateGain_.load()) + ".");
+    }
+
+    void setBalanceGain(const std::string& gain, double value) {
+        if (!std::isfinite(value) || value < 0.0) {
+            notify("Balance gain must be a finite non-negative value.", true);
+            return;
+        }
+        if (gain == "kp") {
+            balanceAngleGain_.store(value);
+        } else {
+            balanceAngularRateGain_.store(value);
+        }
+        std::ostringstream message;
+        message << "Balance " << gain << " updated immediately: " << value
+                << " (runtime only)";
+        record(message.str());
+        notify(message.str());
+    }
+
+    void printBalanceGains() const {
+        std::ostringstream message;
+        message << "balance_kp=" << balanceAngleGain_.load()
+                << ", balance_kd=" << balanceAngularRateGain_.load()
+                << ", maximum_rated_torque_percent="
+                << config_.balanceControl.maximumAbsoluteRatedTorqueFraction * 100.0;
+        notify(message.str());
     }
 
     void stopBalance(const std::string& reason) noexcept {
@@ -933,9 +1064,11 @@ private:
                 settings.pendulumCountsPerRevolution,
                 settings.angularRateFilterAlpha);
             pendulum::control::AnglePdController controller(
-                settings.angleGainRatedTorquePerRadian,
-                settings.angularRateGainRatedTorquePerRadianPerSecond,
+                balanceAngleGain_.load(),
+                balanceAngularRateGain_.load(),
                 settings.maximumAbsoluteRatedTorqueFraction);
+            double activeAngleGain = balanceAngleGain_.load();
+            double activeAngularRateGain = balanceAngularRateGain_.load();
             const auto period = std::chrono::nanoseconds(
                 1'000'000'000LL / static_cast<std::int64_t>(settings.frequencyHz));
 
@@ -998,6 +1131,16 @@ private:
                 }
                 const auto state = estimator.update(
                     sample.positionCounts, sample.time);
+                const double requestedAngleGain = balanceAngleGain_.load();
+                const double requestedAngularRateGain = balanceAngularRateGain_.load();
+                if (requestedAngleGain != activeAngleGain ||
+                    requestedAngularRateGain != activeAngularRateGain) {
+                    controller = pendulum::control::AnglePdController(
+                        requestedAngleGain, requestedAngularRateGain,
+                        settings.maximumAbsoluteRatedTorqueFraction);
+                    activeAngleGain = requestedAngleGain;
+                    activeAngularRateGain = requestedAngularRateGain;
+                }
                 balanceAngleDegrees_.store(
                     state.pendulumAngleRadians * 180.0 / std::numbers::pi);
                 balanceAngularRateDegrees_.store(
@@ -1031,6 +1174,8 @@ private:
                               << ",theta_rad=" << state.pendulumAngleRadians
                               << ",theta_dot_rad_s="
                               << state.pendulumAngularRateRadiansPerSecond
+                              << ",kp=" << activeAngleGain
+                              << ",kd=" << activeAngularRateGain
                               << ",rated_torque_fraction=" << torqueFraction
                               << ",rated_torque_percent=" << torqueFraction * 100.0
                               << ",polarity=" << balancePolarity_.load()
@@ -1065,6 +1210,8 @@ private:
                 << ", rated_torque_percent=" << balanceTorquePercent_.load()
                 << ", maximum_rated_torque_percent="
                 << config_.balanceControl.maximumAbsoluteRatedTorqueFraction * 100.0
+                << ", kp=" << balanceAngleGain_.load()
+                << ", kd=" << balanceAngularRateGain_.load()
                 << ", polarity=" << std::showpos << balancePolarity_.load()
                 << ", max_jitter_us="
                 << balanceMaxJitterMicroseconds_.load()
@@ -1082,9 +1229,9 @@ private:
                 << ", torque_zero_calibrated="
                 << config_.balanceControl.analogTorqueZeroCalibrated
                 << ", angle_kp_rated_torque_per_rad="
-                << config_.balanceControl.angleGainRatedTorquePerRadian
+                << balanceAngleGain_.load()
                 << ", angle_kd_rated_torque_per_rad_s="
-                << config_.balanceControl.angularRateGainRatedTorquePerRadianPerSecond;
+                << balanceAngularRateGain_.load();
         notify(message.str());
     }
 
@@ -1267,9 +1414,10 @@ private:
         notify(message.str());
     }
 
-    void printHelp() const {
+    void printHelp() {
         if (dashboardMode_) {
-            notify("Commands are listed above the prompt; encoder/status/limits/log are also available.");
+            dashboardHelpVisible_.store(true);
+            notify("Help open; run any command to return to recent events.");
             return;
         }
         std::cout
@@ -1281,8 +1429,11 @@ private:
             << "  home center                     Reuse valid travel calibration and center\n"
             << "  home calibrate                  Force a new two-limit calibration\n"
             << "  calibrate zero                  Calibrate and hold motor Vzero\n"
-            << "  balance zero                    Capture freely hanging downward count\n"
+            << "  balance zero                    Recapture downward count (automatic at startup)\n"
             << "  balance start [+|-]             Capture current upright target and stabilize\n"
+            << "  balance kp <value>              Set angle gain immediately (runtime only)\n"
+            << "  balance kd <value>              Set angular-rate gain immediately (runtime only)\n"
+            << "  balance gains                   Show active Kp/Kd and torque limit\n"
             << "  balance stop | status           Stop or inspect angle stabilization\n";
     }
 
@@ -1332,10 +1483,14 @@ private:
     std::condition_variable pendulumSampleCondition_;
     PendulumSample pendulumSample_;
     std::deque<std::string> history_;
+    std::deque<std::string> commandHistory_;
+    std::size_t commandHistoryCursor_{0};
+    std::string commandHistoryDraft_;
     std::string inputBuffer_;
     mutable std::string lastMessage_;
     std::string homingState_{"IDLE"};
     std::atomic<bool> dashboardMode_{false};
+    std::atomic<bool> dashboardHelpVisible_{false};
     std::atomic<bool> sampleReady_{false};
     std::atomic<bool> leftRawHigh_{false};
     std::atomic<bool> rightRawHigh_{false};
@@ -1362,6 +1517,8 @@ private:
     std::atomic<double> balanceAngleDegrees_{0.0};
     std::atomic<double> balanceAngularRateDegrees_{0.0};
     std::atomic<double> balanceTorquePercent_{0.0};
+    std::atomic<double> balanceAngleGain_{0.0};
+    std::atomic<double> balanceAngularRateGain_{0.0};
     std::atomic<int> balancePolarity_{1};
     std::atomic<double> balanceMaxJitterMicroseconds_{0.0};
     std::atomic<std::uint64_t> balanceMissedDeadlines_{0};

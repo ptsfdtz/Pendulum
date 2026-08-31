@@ -46,20 +46,19 @@ piped input automatically uses the plain line-oriented display instead of ANSI f
 Use `status`, `limits`, `encoder`, `log`, and `help` to inspect the hardware. `servo on` writes
 AO0=0 V and enables the Servo immediately; it stays enabled until `servo off` or a stop event.
 
-For upright balance, first let the pendulum hang freely and capture the downward zero:
-
-```text
-balance zero
-```
-
-Then move the cart to its physical center, manually hold the pendulum upright, and start:
+At startup, the first valid A-axis sample is automatically captured as the downward zero. Move the
+cart to its physical center, hold the pendulum upright, and start directly:
 
 ```text
 balance start +
 ```
 
+Use `balance zero` only when you need to recapture the freely hanging reference during the same
+console session.
+
 The A-axis encoder is configured as 2000 PPR with X4 decoding: 8000 counts/revolution,
-0.045 degrees/count. `balance zero` records the freely hanging position. `balance start` captures
+0.045 degrees/count. The automatic startup capture (or `balance zero`) records the freely hanging
+position. `balance start` captures
 the current manually held upright count as the stabilization target; it does not assume that the
 mechanical upright count is exactly zero or persist it across process starts. The downward-to-
 upright difference should be near half a revolution (about 4000 counts) and is logged for
@@ -77,11 +76,26 @@ direction of fall, stop and use the other polarity. `balance start` without a si
 `balance_control.default_polarity`. Initial gains and the AO clamp are configured under
 `balance_control`.
 
+The commissioned starting gains are `Kp=2.0` rated torque/radian and `Kd=0.1` rated
+torque/(radian/second). Change them without restarting or recompiling while the console is running:
+
+```text
+balance kp 2.5
+balance kd 0.12
+balance gains
+```
+
+Runtime gain changes take effect on the next A-axis sample and reset to `config.json` values when
+the console restarts. The console requests 1 ms Windows timer resolution so the configured 2 ms
+encoder monitor period does not degrade to the default approximately 16 ms scheduler interval.
+
 Before tuning, hold AO0 at exactly 0 V and use the SGD7S `Fn009` function to automatically adjust
 the analog speed/torque reference offset, or `Fn00B` for manual torque-reference offset adjustment.
 After completing the drive-side adjustment, set `analog_torque_zero_calibrated` to `true`; use
 `analog_torque_zero_voltage` only for a measured residual software trim. The previous velocity-mode
 motor-zero result must not be reused as a torque-reference offset.
+The commissioned residual torque-zero trim is `-0.00135 V`; `servo on` and balance control apply
+this value while Servo OFF, limit stops, and process exit still force physical AO0 to `0 V`.
 
 The commissioned maximum command is 100% rated torque, which is 3.0 V with Pn400=30. The balance
 loop consumes each timestamped A-axis encoder sample exactly once, so its angular-rate estimate is

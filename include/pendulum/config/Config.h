@@ -108,14 +108,14 @@ struct BalanceControlConfig {
     std::string driveControlMode{"ANALOG_TORQUE"};
     std::uint32_t pn400Setting{30};
     double ratedTorqueCommandVoltage{3.0};
-    double analogTorqueZeroVoltage{0.0};
+    double analogTorqueZeroVoltage{-0.00135};
     bool analogTorqueZeroCalibrated{false};
     std::uint32_t frequencyHz{500};
     std::uint32_t pendulumPulsesPerRevolution{2000};
     std::uint32_t pendulumCountsPerRevolution{8000};
     double angularRateFilterAlpha{0.15};
-    double angleGainRatedTorquePerRadian{0.08333333333333333};
-    double angularRateGainRatedTorquePerRadianPerSecond{0.006666666666666667};
+    double angleGainRatedTorquePerRadian{2.0};
+    double angularRateGainRatedTorquePerRadianPerSecond{0.1};
     int defaultPolarity{1};
     double maximumAbsoluteRatedTorqueFraction{1.0};
     std::uint32_t telemetryDivider{10};

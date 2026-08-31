@@ -59,9 +59,16 @@ void testDefaultConfig(const std::filesystem::path& path) {
     require(config.balanceControl.pn400Setting == 30 &&
                 config.balanceControl.ratedTorqueCommandVoltage == 3.0,
             "SGD7S Pn400 torque scaling mismatch");
+    require(std::abs(config.balanceControl.analogTorqueZeroVoltage -
+                     (-0.00135)) < 1e-15,
+            "analog torque zero calibration mismatch");
     require(std::abs(config.balanceControl.angleGainRatedTorquePerRadian -
-                     0.25 / 3.0) < 1e-15,
+                     5.0) < 1e-15,
             "angle PD rated-torque proportional gain mismatch");
+    require(std::abs(
+                config.balanceControl.angularRateGainRatedTorquePerRadianPerSecond -
+                0.1) < 1e-15,
+            "angle PD rated-torque derivative gain mismatch");
     require(std::abs(config.balanceControl.maximumAbsoluteRatedTorqueFraction *
                          config.balanceControl.ratedTorqueCommandVoltage -
                      3.0) < 1e-15,

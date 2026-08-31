@@ -62,7 +62,7 @@ target_link_libraries(pendulum_encoder_calibrate PRIVATE pendulum_core)
 target_compile_options(pendulum_encoder_calibrate PRIVATE /W4 /permissive- /EHsc)
 
 add_executable(pendulum_manual_console src/tools/ManualConsoleMain.cpp)
-target_link_libraries(pendulum_manual_console PRIVATE pendulum_core)
+target_link_libraries(pendulum_manual_console PRIVATE pendulum_core winmm)
 target_compile_definitions(pendulum_manual_console PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(pendulum_manual_console PRIVATE /W4 /permissive- /EHsc)
 
