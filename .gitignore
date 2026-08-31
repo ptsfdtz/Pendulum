@@ -1,0 +1,10 @@
+/out/
+/build/
+/logs/*.csv
+/config/*.pending
+/config/*.backup_*
+/toolchain-smoke/
+/.vs/
+/.idea/
+*.user
+*.suo

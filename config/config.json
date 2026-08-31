@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "hardware": {
+    "ni6602": {
+      "device": "Dev1",
+      "expected_product": "PCI-6602",
+      "motor_counter": "Dev1/ctr0",
+      "motor_encoder_a_terminal": "DEFAULT",
+      "motor_encoder_b_terminal": "DEFAULT",
+      "motor_encoder_pulses_per_revolution": 2000,
+      "motor_encoder_decoding": "X4",
+      "motor_encoder_counts_per_revolution": 8000,
+      "motor_encoder_counts_per_mm": null,
+      "motor_encoder_calibration": null,
+      "pendulum_counter": "Dev1/ctr1",
+      "left_limit_line": "Dev1/port0/line0",
+      "left_limit_active_high": true,
+      "right_limit_line": "Dev1/port0/line2",
+      "right_limit_active_high": true,
+      "servo_enable_line": "Dev1/port0/line3",
+      "servo_active_high": true
+    },
+    "pci1723": {
+      "device_description": "PCI-1723,BID#15",
+      "ao_channel": 0,
+      "safe_voltage": 0.0,
+      "calibrated_zero_voltage": null,
+      "zero_voltage_requires_calibration": true,
+      "minimum_voltage": -10.0,
+      "maximum_voltage": 10.0,
+      "positive_voltage_cart_direction": "LEFT",
+      "negative_voltage_cart_direction": "RIGHT"
+    }
+  },
+  "safety": {
+    "allow_safe_output_test": false,
+    "output_test_confirmation": ""
+  },
+"manual_console": {
+  "monitor_period_ms": 5,
+  "limit_debounce_samples": 3
+},
+  "logging": {
+    "directory": "logs",
+    "queue_capacity": 4096
+  }
+}
