@@ -21,6 +21,9 @@ struct HomeCenterResult {
     std::int64_t rightBoundaryCounts{0};
     std::int64_t centerCounts{0};
     std::int64_t travelCounts{0};
+    std::int64_t forwardTravelCounts{0};
+    std::int64_t reverseTravelCounts{0};
+    std::int64_t travelDisagreementCounts{0};
     std::int64_t finalPositionCounts{0};
     std::int64_t centerErrorCounts{0};
 };
@@ -42,7 +45,7 @@ public:
                          Progress progress = {});
 
     HomeCenterResult run();
-    HomeCenterResult runUsingStoredTravel(std::int64_t travelCounts);
+    HomeCenterResult measureTravel();
     static std::int64_t midpoint(std::int64_t first, std::int64_t second);
 
 private:
@@ -51,6 +54,7 @@ private:
         std::int64_t position{0};
     };
 
+    HomeCenterResult execute(bool returnToCenter, bool enforceMinimumTravel);
     Edge seek(double voltage, LimitSide expected);
     void learnDirection(LimitSide reachedSide, double towardVoltage);
     void discoverDirectionFromActiveLimit(LimitSide side);

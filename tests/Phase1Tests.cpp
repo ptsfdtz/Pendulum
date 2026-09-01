@@ -36,18 +36,20 @@ void testDefaultConfig(const std::filesystem::path& path) {
             "pendulum counter mismatch");
     require(config.ni6602.pendulumEncoderDecoding == "X4",
             "pendulum encoder decoding mismatch");
+    require(config.ni6602.motorEncoderFilterMinPulseWidthMicroseconds == 10.0,
+            "motor encoder digital filter mismatch");
     require(config.pci1723.deviceDescription == "PCI-1723,BID#15",
             "Advantech device mismatch");
-    require(config.pci1723.positiveVoltageCartDirection == "LEFT",
+    require(config.pci1723.positiveVoltageCartDirection == "RIGHT",
             "positive voltage direction mismatch");
-    require(config.pci1723.negativeVoltageCartDirection == "RIGHT",
+    require(config.pci1723.negativeVoltageCartDirection == "LEFT",
             "negative voltage direction mismatch");
     require(config.manualConsole.dashboardRefreshMilliseconds == 100,
             "dashboard refresh interval mismatch");
     require(config.homeCenter.escapeCounts == 200,
             "home-center escape distance mismatch");
-    require(config.homeCenter.maximumTravelCounts == 33253,
-            "confirmed maximum cart travel mismatch");
+    require(config.homeCenter.maximumTravelDisagreementFraction == 0.02,
+            "home-center travel agreement threshold mismatch");
     require(config.balanceControl.pendulumPulsesPerRevolution == 2000,
             "pendulum PPR mismatch");
     require(config.balanceControl.pendulumCountsPerRevolution == 8000,
@@ -63,11 +65,11 @@ void testDefaultConfig(const std::filesystem::path& path) {
                      (-0.00135)) < 1e-15,
             "analog torque zero calibration mismatch");
     require(std::abs(config.balanceControl.angleGainRatedTorquePerRadian -
-                     5.0) < 1e-15,
+                     4.3) < 1e-15,
             "angle PD rated-torque proportional gain mismatch");
     require(std::abs(
                 config.balanceControl.angularRateGainRatedTorquePerRadianPerSecond -
-                0.1) < 1e-15,
+                0.15) < 1e-15,
             "angle PD rated-torque derivative gain mismatch");
     require(std::abs(config.balanceControl.maximumAbsoluteRatedTorqueFraction *
                          config.balanceControl.ratedTorqueCommandVoltage -
@@ -220,7 +222,6 @@ void testHomeCenterMath() {
     settings.centerSlowVoltage = 0.015;
     settings.escapeCounts = 2;
     settings.minimumTravelCounts = 10;
-    settings.maximumTravelCounts = 30;
     settings.centerToleranceFraction = 0.01;
     settings.minimumCenterToleranceCounts = 1;
     settings.searchTimeoutSeconds = 1.0;
@@ -231,6 +232,8 @@ void testHomeCenterMath() {
 
     std::int64_t position = 0;
     double voltage = 0.0;
+    bool firstBoundaryRefined = false;
+    double maximumCommandAfterFirstBoundary = 0.0;
     HomeCenterController controller(
         settings, true,
         [&] {
@@ -252,13 +255,18 @@ void testHomeCenterMath() {
             "simulated right boundary is wrong");
     require(result.travelCounts == 20 && result.centerCounts == 0,
             "simulated travel or center is wrong");
+    require(result.forwardTravelCounts == 20 &&
+                result.reverseTravelCounts == 20 &&
+                result.travelDisagreementCounts == 0,
+            "simulated round-trip verification is wrong");
     require(std::llabs(result.centerErrorCounts) <= 1,
             "simulated cart did not return to center");
+    require(maximumCommandAfterFirstBoundary <= settings.escapeVoltage,
+            "distance-critical homing reused the fast search voltage");
 
-    position = 0;
+    position = -6;
     voltage = 0.0;
-    std::int64_t maximumPositionSeen = position;
-    HomeCenterController reuseController(
+    HomeCenterController arbitraryStartController(
         settings, true,
         [&] {
             if (voltage > 0.0) {
@@ -266,20 +274,115 @@ void testHomeCenterMath() {
             } else if (voltage < 0.0) {
                 ++position;
             }
-            maximumPositionSeen = std::max(maximumPositionSeen, position);
             return pendulum::calibration::HomeCenterSample{
                 position, position <= -10, position >= 10};
         },
         [&](double command,
             pendulum::calibration::LimitSide) { voltage = command; },
         [&](const std::string&) { voltage = 0.0; }, [] { return false; });
-    const auto reused = reuseController.runUsingStoredTravel(result.travelCounts);
-    require(reused.travelCounts == 20 && reused.centerCounts == 0,
-            "persisted travel was not reused correctly");
-    require(std::llabs(reused.centerErrorCounts) <= 1,
-            "stored calibration did not return the cart to center");
-    require(maximumPositionSeen < 10,
-            "stored calibration unexpectedly probed the second limit");
+    const auto arbitraryStart = arbitraryStartController.run();
+    require(arbitraryStart.leftBoundaryCounts == -10 &&
+                arbitraryStart.rightBoundaryCounts == 10 &&
+                arbitraryStart.travelCounts == 20 &&
+                arbitraryStart.centerCounts == 0,
+            "fresh two-limit centering failed from an arbitrary start");
+    require(std::llabs(arbitraryStart.centerErrorCounts) <= 1,
+            "fresh two-limit centering did not return the cart to center");
+
+    auto invalidTravelSettings = settings;
+    invalidTravelSettings.minimumTravelCounts = 25;
+    position = 0;
+    voltage = 0.0;
+    bool invalidTravelRejected = false;
+    HomeCenterController invalidTravelController(
+        invalidTravelSettings, true,
+        [&] {
+            if (voltage > 0.0) {
+                --position;
+            } else if (voltage < 0.0) {
+                ++position;
+            }
+            return pendulum::calibration::HomeCenterSample{
+                position, position <= -10, position >= 10};
+        },
+        [&](double command, pendulum::calibration::LimitSide) {
+            voltage = command;
+            if (firstBoundaryRefined) {
+                maximumCommandAfterFirstBoundary =
+                    std::max(maximumCommandAfterFirstBoundary,
+                             std::abs(command));
+            }
+        },
+        [&](const std::string&) { voltage = 0.0; }, [] { return false; },
+        [&](const std::string& message) {
+            if (message.starts_with("Refined")) {
+                firstBoundaryRefined = true;
+            }
+        });
+    try {
+        static_cast<void>(invalidTravelController.run());
+    } catch (const std::runtime_error&) {
+        invalidTravelRejected = true;
+    }
+    require(invalidTravelRejected,
+            "below-minimum measured travel was not rejected");
+    require(position > -10 && position < 10 && voltage == 0.0,
+            "travel rejection left the cart pressed against a limit");
+
+    position = 4;
+    voltage = 0.0;
+    HomeCenterController travelMeasurementController(
+        invalidTravelSettings, true,
+        [&] {
+            if (voltage > 0.0) {
+                --position;
+            } else if (voltage < 0.0) {
+                ++position;
+            }
+            return pendulum::calibration::HomeCenterSample{
+                position, position <= -10, position >= 10};
+        },
+        [&](double command,
+            pendulum::calibration::LimitSide) { voltage = command; },
+        [&](const std::string&) { voltage = 0.0; }, [] { return false; });
+    const auto measuredTravel = travelMeasurementController.measureTravel();
+    require(measuredTravel.travelCounts == 20 &&
+                measuredTravel.leftBoundaryCounts == -10 &&
+                measuredTravel.rightBoundaryCounts == 10,
+            "measure-only command did not report relative two-limit travel");
+    require(position > -10 && position < 10 && voltage == 0.0,
+            "measure-only command left the cart pressed against a limit");
+
+    std::int64_t physicalPosition = 0;
+    std::int64_t distortedEncoderPosition = 0;
+    voltage = 0.0;
+    bool inconsistentTravelRejected = false;
+    HomeCenterController inconsistentTravelController(
+        settings, true,
+        [&] {
+            if (voltage > 0.0 && physicalPosition < 10) {
+                ++physicalPosition;
+                distortedEncoderPosition += 2;
+            } else if (voltage < 0.0 && physicalPosition > -10) {
+                --physicalPosition;
+                --distortedEncoderPosition;
+            }
+            return pendulum::calibration::HomeCenterSample{
+                distortedEncoderPosition, physicalPosition <= -10,
+                physicalPosition >= 10};
+        },
+        [&](double command,
+            pendulum::calibration::LimitSide) { voltage = command; },
+        [&](const std::string&) { voltage = 0.0; }, [] { return false; });
+    try {
+        static_cast<void>(inconsistentTravelController.run());
+    } catch (const std::runtime_error&) {
+        inconsistentTravelRejected = true;
+    }
+    require(inconsistentTravelRejected,
+            "direction-dependent encoder corruption was not rejected");
+    require(physicalPosition > -10 && physicalPosition < 10 && voltage == 0.0,
+            "round-trip rejection left the cart pressed against a limit");
 
     position = 0;
     voltage = 0.0;

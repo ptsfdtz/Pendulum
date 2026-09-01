@@ -134,7 +134,8 @@ int run(const Options& options) {
         ni.configureMotorEncoder(config.ni6602.motorCounter,
                                  config.ni6602.motorEncoderATerminal,
                                  config.ni6602.motorEncoderBTerminal,
-                                 config.ni6602.motorEncoderPulsesPerRevolution);
+                                 config.ni6602.motorEncoderPulsesPerRevolution,
+                                 config.ni6602.motorEncoderFilterMinPulseWidthMicroseconds * 1e-6);
 
         if (options.probeOnly) {
             const auto first = ni.readMotorEncoderRaw();

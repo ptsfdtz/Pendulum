@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <stdexcept>
 #include <utility>
@@ -126,10 +127,12 @@ bool NI6602::readDigitalLine(const std::string& physicalLine) {
 void NI6602::configureMotorEncoder(const std::string& counter,
                                    const std::string& phaseATerminal,
                                    const std::string& phaseBTerminal,
-                                   std::uint32_t pulsesPerRevolution) {
+                                   std::uint32_t pulsesPerRevolution,
+                                   double filterMinPulseWidthSeconds) {
     if (counter.empty() || counter == "UNCONFIRMED" || phaseATerminal.empty() ||
         phaseATerminal == "UNCONFIRMED" || phaseBTerminal.empty() ||
-        phaseBTerminal == "UNCONFIRMED" || pulsesPerRevolution == 0) {
+        phaseBTerminal == "UNCONFIRMED" || pulsesPerRevolution == 0 ||
+        !std::isfinite(filterMinPulseWidthSeconds) || filterMinPulseWidthSeconds < 0.0) {
         throw std::invalid_argument("Invalid or unconfirmed motor encoder configuration");
     }
     const bool useDefaultRouting = phaseATerminal == "DEFAULT" && phaseBTerminal == "DEFAULT";
@@ -156,6 +159,20 @@ void NI6602::configureMotorEncoder(const std::string& counter,
             checkDaq(DAQmxSetCIEncoderBInputTerm(impl_->motorEncoderTask.get(), "",
                                                  phaseBTerminal.c_str()),
                      "DAQmxSetCIEncoderBInputTerm");
+        }
+        if (filterMinPulseWidthSeconds > 0.0) {
+            checkDaq(DAQmxSetCIEncoderAInputDigFltrMinPulseWidth(
+                         impl_->motorEncoderTask.get(), "", filterMinPulseWidthSeconds),
+                     "DAQmxSetCIEncoderAInputDigFltrMinPulseWidth");
+            checkDaq(DAQmxSetCIEncoderBInputDigFltrMinPulseWidth(
+                         impl_->motorEncoderTask.get(), "", filterMinPulseWidthSeconds),
+                     "DAQmxSetCIEncoderBInputDigFltrMinPulseWidth");
+            checkDaq(DAQmxSetCIEncoderAInputDigFltrEnable(
+                         impl_->motorEncoderTask.get(), "", true),
+                     "DAQmxSetCIEncoderAInputDigFltrEnable");
+            checkDaq(DAQmxSetCIEncoderBInputDigFltrEnable(
+                         impl_->motorEncoderTask.get(), "", true),
+                     "DAQmxSetCIEncoderBInputDigFltrEnable");
         }
         checkDaq(DAQmxStartTask(impl_->motorEncoderTask.get()),
                  "DAQmxStartTask(motor encoder)");

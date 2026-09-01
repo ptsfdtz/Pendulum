@@ -35,7 +35,8 @@ public:
     void configureMotorEncoder(const std::string& counter,
                                const std::string& phaseATerminal,
                                const std::string& phaseBTerminal,
-                               std::uint32_t pulsesPerRevolution);
+                               std::uint32_t pulsesPerRevolution,
+                               double filterMinPulseWidthSeconds);
     std::uint32_t readMotorEncoderRaw();
     bool motorEncoderConfigured() const noexcept;
 

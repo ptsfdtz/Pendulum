@@ -97,13 +97,6 @@ public:
         balanceAngleGain_.store(config_.balanceControl.angleGainRatedTorquePerRadian);
         balanceAngularRateGain_.store(
             config_.balanceControl.angularRateGainRatedTorquePerRadianPerSecond);
-        if (config_.homeCenterCalibration.has_value()) {
-            homeCalibrationAvailable_.store(true);
-            homeCalibrationTravel_.store(
-                config_.homeCenterCalibration->travelCounts);
-            homeCalibrationError_.store(
-                config_.homeCenterCalibration->centerErrorCounts);
-        }
     }
 
     int run() {
@@ -395,18 +388,13 @@ private:
             screen << (servo ? "\x1b[1;33m" : "\x1b[0;37m")
                    << row(output.str(), width) << "\x1b[0m\n";
             std::ostringstream calibration;
-            if (homeCalibrationAvailable_.load()) {
+            if (homeResultAvailable_.load()) {
                 const auto error = homeCalibrationError_.load();
-                calibration << "HOME CAL  STORED    travel "
+                calibration << "HOME LAST SESSION    travel "
                             << homeCalibrationTravel_.load()
-                            << " counts    offset " << std::showpos << error
-                            << "    reuse "
-                            << (std::llabs(error) <=
-                                        config_.homeCenter.maximumReuseCenterErrorCounts
-                                    ? "YES"
-                                    : "NO");
+                            << " counts    offset " << std::showpos << error;
             } else {
-                calibration << "HOME CAL  NOT AVAILABLE";
+                calibration << "HOME LAST SESSION    NOT RUN";
             }
             screen << row(calibration.str(), width) << '\n';
 
@@ -414,7 +402,7 @@ private:
                 screen << border("HELP / COMMANDS", width) << '\n';
                 screen << row("status  limits  encoder  log  help  quit", width) << '\n';
                 screen << row("servo on|off    voltage <V> [duration_ms]", width) << '\n';
-                screen << row("home center|calibrate    calibrate zero", width) << '\n';
+                screen << row("home measure|center    calibrate zero", width) << '\n';
                 screen << row("balance zero (recapture)    balance start [+|-]", width) << '\n';
                 screen << row("balance stop|status    balance gains", width) << '\n';
                 screen << row("balance kp <value>    balance kd <value>", width) << '\n';
@@ -435,7 +423,7 @@ private:
                        << '\n';
                 screen << row("balance kp <v>    balance kd <v>    balance gains", width)
                        << '\n';
-                screen << row("servo on|off    voltage <V> [ms]    home center|calibrate", width)
+                screen << row("servo on|off    voltage <V> [ms]    home measure|center", width)
                        << '\n';
                 screen << row("status  limits  encoder  log  help  quit    Up/Down: history", width)
                        << '\n';
@@ -486,7 +474,9 @@ private:
         ni_.configureMotorEncoder(config_.ni6602.motorCounter,
                                   config_.ni6602.motorEncoderATerminal,
                                   config_.ni6602.motorEncoderBTerminal,
-                                  config_.ni6602.motorEncoderPulsesPerRevolution);
+                                  config_.ni6602.motorEncoderPulsesPerRevolution,
+                                  config_.ni6602.motorEncoderFilterMinPulseWidthMicroseconds *
+                                      1e-6);
         ni_.configurePendulumEncoderRaw(config_.ni6602.pendulumCounter,
                                         config_.ni6602.pendulumEncoderATerminal,
                                         config_.ni6602.pendulumEncoderBTerminal);
@@ -576,16 +566,29 @@ private:
 
                 const bool anyLimit = leftStable || rightStable;
                 if (anyLimit && !limitStopActive_.exchange(true)) {
-                    calibrationAbort_.store(true);
+                    const bool expectedHomingLimit = homingRunning_.load();
+                    if (!expectedHomingLimit) {
+                        calibrationAbort_.store(true);
+                    }
                     balanceAbort_.store(true);
                     stopOutputs(std::string("limit triggered: ") +
                                 (leftStable ? "LEFT" : "RIGHT"));
-                    record(std::string("LIMIT STOP: ") +
-                               (leftStable ? "LEFT" : "RIGHT"),
-                           pendulum::logging::Level::Critical);
-                    notify(std::string("LIMIT: ") + (leftStable ? "LEFT" : "RIGHT") +
-                               "; AO0=0 V, Servo OFF",
-                           true);
+                    if (expectedHomingLimit) {
+                        record(std::string("HOME LIMIT REACHED: ") +
+                               (leftStable ? "LEFT" : "RIGHT"));
+                        notify(std::string("HOME LIMIT: ") +
+                                   (leftStable ? "LEFT" : "RIGHT") +
+                                   "; releasing inward",
+                               true);
+                    } else {
+                        record(std::string("LIMIT STOP: ") +
+                                   (leftStable ? "LEFT" : "RIGHT"),
+                               pendulum::logging::Level::Critical);
+                        notify(std::string("LIMIT: ") +
+                                   (leftStable ? "LEFT" : "RIGHT") +
+                                   "; AO0=0 V, Servo OFF",
+                               true);
+                    }
                 } else if (!anyLimit) {
                     limitStopActive_.store(false);
                 }
@@ -716,11 +719,11 @@ private:
             std::string target;
             input >> target;
             if (target == "center") {
-                homeCenter(false);
-            } else if (target == "calibrate") {
-                homeCenter(true);
+                runHomeOperation(false);
+            } else if (target == "measure") {
+                runHomeOperation(true);
             } else {
-                notify("Usage: home center|calibrate", true);
+                notify("Usage: home measure|center", true);
             }
         } else if (command == "quit" || command == "exit") {
             return false;
@@ -1235,7 +1238,7 @@ private:
         notify(message.str());
     }
 
-    void homeCenter(bool forceCalibration) {
+    void runHomeOperation(bool measureOnly) {
         if (balanceRunning_.load()) {
             notify("Stop balance control before homing.", true);
             return;
@@ -1253,30 +1256,12 @@ private:
 
         try {
             stopOutputs("home-center start");
-            const auto saved = config_.homeCenterCalibration;
-            const bool savedTravelValid =
-                saved.has_value() &&
-                saved->travelCounts >= config_.homeCenter.minimumTravelCounts &&
-                saved->travelCounts <= config_.homeCenter.maximumTravelCounts;
-            const bool savedOffsetAcceptable =
-                savedTravelValid &&
-                std::llabs(saved->centerErrorCounts) <=
-                    config_.homeCenter.maximumReuseCenterErrorCounts;
-            bool reuseStoredTravel =
-                !forceCalibration && savedOffsetAcceptable;
-
-            if (reuseStoredTravel) {
-                record("Home-center started using persisted travel calibration");
-                notify("Homing started: reusing persisted travel after one-limit reference.");
-            } else {
-                std::string reason = forceCalibration
-                    ? "forced by operator"
-                    : !savedTravelValid
-                          ? "no valid persisted calibration"
-                          : "persisted center offset exceeds reuse threshold";
-                record("Home-center full boundary calibration started: " + reason);
-                notify("Homing calibration started: probing both limits, then returning to center.");
-            }
+            record(measureOnly
+                       ? "Home travel measurement started: using the first limit as the session reference"
+                       : "Home-center started: measuring both limits for this session");
+            notify(measureOnly
+                       ? "Travel measurement started: probing both limits, then releasing inward and stopping."
+                       : "Homing started: probing both limits, then returning to this session's center.");
 
             const bool positiveMovesLeft =
                 config_.pci1723.positiveVoltageCartDirection == "LEFT";
@@ -1324,50 +1309,28 @@ private:
                     notify("[home] " + message);
                 });
 
-            auto result = reuseStoredTravel
-                              ? controller.runUsingStoredTravel(saved->travelCounts)
-                              : controller.run();
-            if (reuseStoredTravel &&
-                std::llabs(result.centerErrorCounts) >
-                    config_.homeCenter.maximumReuseCenterErrorCounts) {
-                std::ostringstream fallback;
-                fallback << "Stored calibration settled with "
-                         << result.centerErrorCounts
-                         << " counts error; running full two-limit calibration";
-                record(fallback.str(), pendulum::logging::Level::Warning);
-                notify("[home] " + fallback.str());
-                setHomingState("OFFSET TOO LARGE / RECALIBRATING");
-                result = controller.run();
-                reuseStoredTravel = false;
-            }
-            pendulum::config::AppConfig::saveHomeCenterCalibration(
-                configPath_,
-                pendulum::config::HomeCenterCalibrationRecord{
-                    result.leftBoundaryCounts, result.rightBoundaryCounts,
-                    result.centerCounts, result.travelCounts,
-                    result.finalPositionCounts, result.centerErrorCounts,
-                    reuseStoredTravel});
-            config_.homeCenterCalibration =
-                pendulum::config::HomeCenterCalibrationRecord{
-                    result.leftBoundaryCounts, result.rightBoundaryCounts,
-                    result.centerCounts, result.travelCounts,
-                    result.finalPositionCounts, result.centerErrorCounts,
-                    reuseStoredTravel};
-            homeCalibrationAvailable_.store(true);
+            const auto result = measureOnly ? controller.measureTravel()
+                                            : controller.run();
+            homeResultAvailable_.store(true);
             homeCalibrationTravel_.store(result.travelCounts);
             homeCalibrationError_.store(result.centerErrorCounts);
 
             std::ostringstream message;
-            message << "Homing complete: left=" << result.leftBoundaryCounts
+            message << (measureOnly ? "Travel measurement complete: left="
+                                    : "Homing complete: left=")
+                    << result.leftBoundaryCounts
                     << ", right=" << result.rightBoundaryCounts
                     << ", travel=" << result.travelCounts
+                    << ", forward=" << result.forwardTravelCounts
+                    << ", reverse=" << result.reverseTravelCounts
+                    << ", disagreement=" << result.travelDisagreementCounts
                     << ", center=" << result.centerCounts
                     << ", final=" << result.finalPositionCounts
-                    << ", error=" << result.centerErrorCounts
+                    << ", center_error=" << result.centerErrorCounts
                     << " counts, mode="
-                    << (reuseStoredTravel ? "REUSED" : "CALIBRATED")
+                    << (measureOnly ? "MEASURE_ONLY" : "FRESH_TWO_LIMIT_SESSION")
                     << "; AO0=0 V, Servo OFF";
-            setHomingState("COMPLETE");
+            setHomingState(measureOnly ? "MEASURED" : "COMPLETE");
             record(message.str());
             notify(message.str());
         } catch (const std::exception& error) {
@@ -1393,9 +1356,9 @@ private:
                 << ", fault=" << faultLatched_.load()
                 << ", motor_position=" << motorPositionCounts_.load()
                 << ", pendulum_position=" << pendulumPositionCounts_.load()
-                << ", home_calibration="
-                << (homeCalibrationAvailable_.load() ? "stored" : "missing");
-        if (homeCalibrationAvailable_.load()) {
+                << ", home_session_result="
+                << (homeResultAvailable_.load() ? "available" : "not_run");
+        if (homeResultAvailable_.load()) {
             message << ", home_travel=" << homeCalibrationTravel_.load()
                     << ", home_offset=" << homeCalibrationError_.load();
         }
@@ -1426,8 +1389,8 @@ private:
             << "  servo on | servo off\n"
             << "  voltage <volts>                 Set and hold AO voltage\n"
             << "  voltage <volts> <duration_ms>   Timed voltage, then Servo OFF\n"
-            << "  home center                     Reuse valid travel calibration and center\n"
-            << "  home calibrate                  Force a new two-limit calibration\n"
+            << "  home measure                    Measure relative two-limit travel only\n"
+            << "  home center                     Measure both limits and center this session\n"
             << "  calibrate zero                  Calibrate and hold motor Vzero\n"
             << "  balance zero                    Recapture downward count (automatic at startup)\n"
             << "  balance start [+|-]             Capture current upright target and stabilize\n"
@@ -1522,7 +1485,7 @@ private:
     std::atomic<int> balancePolarity_{1};
     std::atomic<double> balanceMaxJitterMicroseconds_{0.0};
     std::atomic<std::uint64_t> balanceMissedDeadlines_{0};
-    std::atomic<bool> homeCalibrationAvailable_{false};
+    std::atomic<bool> homeResultAvailable_{false};
     std::atomic<std::int64_t> homeCalibrationTravel_{0};
     std::atomic<std::int64_t> homeCalibrationError_{0};
 };

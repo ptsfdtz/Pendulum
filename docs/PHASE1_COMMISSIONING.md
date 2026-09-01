@@ -31,8 +31,8 @@ The configuration authorization was disabled again immediately after the test.
 - [x] Left limit `Dev1/port0/line0` is active HIGH
 - [x] Right limit `Dev1/port0/line2` is active HIGH
 - [x] Servo ON at AO0 = 0 V causes cart drift
-- [x] Positive AO0 voltage moves the cart LEFT (measured with +0.02 V)
-- [x] Negative AO0 voltage moves the cart RIGHT (measured with -0.02 V)
+- [x] Positive AO0 voltage moves the cart RIGHT (confirmed from limit-event logs)
+- [x] Negative AO0 voltage moves the cart LEFT (confirmed from limit-event logs)
 - [x] Servo drive: Yaskawa `SGD7S-180A00A002`, manually selected analog torque mode
 - [x] `Pn400 = 30`: 3.0 V torque reference equals 100% rated torque
 - [ ] Analog torque-reference offset adjusted with drive function `Fn009` or `Fn00B`
@@ -51,6 +51,8 @@ as the stationary command while Servo is ON.
 - [x] NI counter physical channel: `Dev1/ctr0`
 - [x] Encoder A input: CTR0 SOURCE, connector pin 2 (DAQmx default routing)
 - [x] Encoder B input: CTR0 AUX, connector pin 40 (DAQmx default routing)
+- [x] A/B digital minimum-pulse-width filter: 10 us (verified accepted by PCI-6602)
+- [x] Filtered powered full travel: 33112 counts on 2026-09-01
 - [ ] Manual distance calibration completed and `counts_per_mm` saved
 
 The calibration tool intentionally refuses to start until the counter and both encoder terminals

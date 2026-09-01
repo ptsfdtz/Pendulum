@@ -127,14 +127,23 @@ Return the stage to its mechanical center from the console:
 home center
 ```
 
-On the first run, the command probes and refines both active-HIGH limits and atomically stores the
-measured travel, center, and final error in `config.json`. Later runs reuse the stored travel when
-the previous center error is no greater than `home_center.maximum_reuse_center_error_counts`; only
-one limit is then needed to re-establish the incremental encoder reference. Use `home calibrate` to
-force a fresh two-limit calibration. The settled position is checked after outputs stop; if a reused
-result exceeds the configured error threshold, the same command automatically falls back to a full
-two-limit calibration. Every path finishes at AO0=0 V and Servo OFF. After a limit stop, the release
-phase accepts only motion away from that active limit.
+To measure the relative encoder span between the two physical limits without moving to the
+calculated center, use:
+
+```text
+home measure
+```
+
+The measurement reports both refined boundary counts plus the forward and reverse travel. It
+returns to the first limit for an independent reverse measurement, releases inward, and stops
+without moving to center or writing the result to `config.json`.
+
+Every invocation starts from the cart's current position, probes and refines both active-HIGH
+limits, calculates the midpoint from this session's encoder counts, and returns to that midpoint.
+The result is retained only in process memory for status display; it is never written to or reused
+from `config.json`. The settled position is checked after outputs stop. Every path finishes at
+AO0=0 V and Servo OFF. After a limit stop, the release phase accepts only motion away from that
+active limit.
 
 The first boundary is intentionally not assumed to be LEFT or RIGHT. The controller accepts the
 first limit actually reached, learns the AO direction from that event, and then requires the second
@@ -142,8 +151,10 @@ event to be the opposite limit before calculating the center. If the console sta
 is already active, `home_center.away_direction_test_ms` controls the low-voltage release-direction
 test.
 
-The confirmed maximum motor-encoder span between physical limits is 33253 counts. A two-limit
-measurement above `home_center.maximum_travel_counts` is rejected and is never persisted or reused.
+There is no configured maximum encoder span. `home_center.minimum_travel_counts` rejects an
+implausibly short measurement, and `home_center.maximum_travel_disagreement_fraction` requires the
+forward and reverse spans to agree before centering. The motor encoder A/B inputs also use the
+configurable NI-DAQmx minimum-pulse-width filter to reject narrow electrical glitches.
 
 ## Build
 

@@ -126,6 +126,8 @@ AppConfig AppConfig::load(const std::filesystem::path& path) {
         requireValue<std::string>(ni, "motor_encoder_decoding");
     config.ni6602.motorEncoderCountsPerRevolution =
         requireValue<std::uint32_t>(ni, "motor_encoder_counts_per_revolution");
+    config.ni6602.motorEncoderFilterMinPulseWidthMicroseconds =
+        requireValue<double>(ni, "motor_encoder_filter_min_pulse_width_us");
     if (!ni.contains("motor_encoder_counts_per_mm")) {
         throw std::runtime_error("Missing configuration value: motor_encoder_counts_per_mm");
     }
@@ -239,7 +241,8 @@ AppConfig AppConfig::load(const std::filesystem::path& path) {
     home.centerSlowVoltage = requireValue<double>(homing, "center_slow_voltage");
     home.escapeCounts = requireValue<std::int64_t>(homing, "escape_counts");
     home.minimumTravelCounts = requireValue<std::int64_t>(homing, "minimum_travel_counts");
-    home.maximumTravelCounts = requireValue<std::int64_t>(homing, "maximum_travel_counts");
+    home.maximumTravelDisagreementFraction =
+        requireValue<double>(homing, "maximum_travel_disagreement_fraction");
     home.centerToleranceFraction =
         requireValue<double>(homing, "center_tolerance_fraction");
     home.minimumCenterToleranceCounts =
@@ -414,6 +417,11 @@ void AppConfig::validateForEnumeration() const {
          *ni6602.motorEncoderCountsPerMillimeter <= 0.0)) {
         throw std::runtime_error("motor_encoder_counts_per_mm must be null or a positive number");
     }
+    if (!std::isfinite(ni6602.motorEncoderFilterMinPulseWidthMicroseconds) ||
+        ni6602.motorEncoderFilterMinPulseWidthMicroseconds < 0.0) {
+        throw std::runtime_error(
+            "motor_encoder_filter_min_pulse_width_us must be finite and non-negative");
+    }
     requireNotEmpty(pci1723.deviceDescription, "hardware.pci1723.device_description");
     if (pci1723.aoChannel < 0) {
         throw std::runtime_error("hardware.pci1723.ao_channel must be non-negative");
@@ -563,7 +571,9 @@ void AppConfig::validateForManualConsole() const {
         !positiveFiniteHome(home.centerMidVoltage) ||
         !positiveFiniteHome(home.centerSlowVoltage) ||
         home.escapeCounts <= 0 || home.minimumTravelCounts <= 0 ||
-        home.maximumTravelCounts <= home.minimumTravelCounts ||
+        !std::isfinite(home.maximumTravelDisagreementFraction) ||
+        home.maximumTravelDisagreementFraction < 0.0 ||
+        home.maximumTravelDisagreementFraction > 1.0 ||
         !positiveFiniteHome(home.centerToleranceFraction) ||
         home.centerToleranceFraction >= 0.5 ||
         home.minimumCenterToleranceCounts <= 0 ||

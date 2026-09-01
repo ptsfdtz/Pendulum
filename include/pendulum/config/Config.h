@@ -18,6 +18,7 @@ struct Ni6602Config {
     std::uint32_t motorEncoderPulsesPerRevolution{0};
     std::string motorEncoderDecoding;
     std::uint32_t motorEncoderCountsPerRevolution{0};
+    double motorEncoderFilterMinPulseWidthMicroseconds{0.0};
     std::optional<double> motorEncoderCountsPerMillimeter;
     std::string pendulumCounter;
     std::string pendulumEncoderATerminal;
@@ -91,7 +92,7 @@ struct HomeCenterConfig {
     double centerSlowVoltage{0.015};
     std::int64_t escapeCounts{200};
     std::int64_t minimumTravelCounts{1000};
-    std::int64_t maximumTravelCounts{33253};
+    double maximumTravelDisagreementFraction{0.02};
     double centerToleranceFraction{0.0005};
     std::int64_t minimumCenterToleranceCounts{10};
     std::int64_t maximumReuseCenterErrorCounts{50};

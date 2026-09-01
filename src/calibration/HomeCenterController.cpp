@@ -46,11 +46,21 @@ std::int64_t HomeCenterController::midpoint(std::int64_t first, std::int64_t sec
 }
 
 HomeCenterResult HomeCenterController::run() {
+    return execute(true, true);
+}
+
+HomeCenterResult HomeCenterController::measureTravel() {
+    return execute(false, false);
+}
+
+HomeCenterResult HomeCenterController::execute(bool returnToCenter,
+                                               bool enforceMinimumTravel) {
     auto sample = readSample_();
     if (sample.leftLimit && sample.rightLimit) {
         throw std::runtime_error("Both limits are active");
     }
 
+    const auto startPosition = sample.positionCounts;
     LimitSide firstSide = LimitSide::None;
     if (sample.leftLimit) {
         firstSide = LimitSide::Left;
@@ -72,100 +82,94 @@ HomeCenterResult HomeCenterController::run() {
     static_cast<void>(backOff(firstSide));
 
     const auto secondSide = opposite(firstSide);
-    const auto secondEdge = seek(towardSign(secondSide) * settings_.searchVoltage,
+    report(std::string("Measuring full travel toward ") + sideName(secondSide) +
+           " at fine voltage");
+    const auto secondEdge = seek(towardSign(secondSide) * settings_.fineVoltage,
                                  secondSide);
     static_cast<void>(secondEdge);
     const auto secondBoundary = refine(secondSide);
     report(std::string("Refined ") + sideName(secondSide) + " boundary=" +
            std::to_string(secondBoundary));
+    static_cast<void>(backOff(secondSide));
 
-    const auto signedTravel = secondBoundary - firstBoundary;
-    const auto travel = std::llabs(signedTravel);
-    if (travel < settings_.minimumTravelCounts ||
-        travel > settings_.maximumTravelCounts) {
+    const auto signedForwardTravel = secondBoundary - firstBoundary;
+    const auto forwardTravel = std::llabs(signedForwardTravel);
+    report("Forward measurement: start=" + std::to_string(startPosition) +
+           ", first_boundary=" + std::to_string(firstBoundary) +
+           ", second_boundary=" + std::to_string(secondBoundary) +
+           ", relative_travel=" + std::to_string(forwardTravel));
+    if (enforceMinimumTravel && forwardTravel < settings_.minimumTravelCounts) {
         throw std::runtime_error(
-            "Measured travel " + std::to_string(travel) +
-            " counts is outside configured range " +
-            std::to_string(settings_.minimumTravelCounts) + ".." +
-            std::to_string(settings_.maximumTravelCounts));
+            "Measured forward travel " + std::to_string(forwardTravel) +
+            " counts is below configured minimum " +
+            std::to_string(settings_.minimumTravelCounts));
     }
-    const auto center = midpoint(firstBoundary, secondBoundary);
-    report("Travel=" + std::to_string(travel) + ", center=" +
+
+    report(std::string("Verifying reverse travel toward ") + sideName(firstSide) +
+           " at fine voltage");
+    static_cast<void>(seek(towardSign(firstSide) * settings_.fineVoltage,
+                           firstSide));
+    const auto verifiedFirstBoundary = refine(firstSide);
+    report(std::string("Verified ") + sideName(firstSide) + " boundary=" +
+           std::to_string(verifiedFirstBoundary));
+    static_cast<void>(backOff(firstSide));
+
+    const auto signedReverseTravel = verifiedFirstBoundary - secondBoundary;
+    const auto reverseTravel = std::llabs(signedReverseTravel);
+    const auto disagreement = std::llabs(forwardTravel - reverseTravel);
+    const bool oppositeDirections =
+        signedForwardTravel != 0 && signedReverseTravel != 0 &&
+        ((signedForwardTravel > 0) != (signedReverseTravel > 0));
+    const auto allowedDisagreement = static_cast<std::int64_t>(std::ceil(
+        static_cast<double>(std::max(forwardTravel, reverseTravel)) *
+        settings_.maximumTravelDisagreementFraction));
+    report("Travel verification: forward=" + std::to_string(forwardTravel) +
+           ", reverse=" + std::to_string(reverseTravel) +
+           ", disagreement=" + std::to_string(disagreement) +
+           ", allowed=" + std::to_string(allowedDisagreement));
+    if (!oppositeDirections) {
+        throw std::runtime_error(
+            "Encoder direction was not opposite on the return traversal");
+    }
+    if (enforceMinimumTravel && reverseTravel < settings_.minimumTravelCounts) {
+        throw std::runtime_error(
+            "Measured reverse travel " + std::to_string(reverseTravel) +
+            " counts is below configured minimum " +
+            std::to_string(settings_.minimumTravelCounts));
+    }
+    if (disagreement > allowedDisagreement) {
+        throw std::runtime_error(
+            "Forward/reverse travel disagreement " + std::to_string(disagreement) +
+            " counts exceeds allowed " + std::to_string(allowedDisagreement));
+    }
+
+    const auto travel = midpoint(forwardTravel, reverseTravel);
+    const auto center = midpoint(verifiedFirstBoundary, secondBoundary);
+    report("Accepted travel=" + std::to_string(travel) + ", center=" +
            std::to_string(center));
 
     const double firstAwaySign = -towardSign(firstSide);
     const double aoToEncoderSign =
-        (signedTravel > 0 ? 1.0 : -1.0) * firstAwaySign;
-    static_cast<void>(backOff(secondSide));
-    const auto finalPosition = moveToCenter(center, travel, aoToEncoderSign);
-    stopMotion_("homing complete");
+        (signedForwardTravel > 0 ? 1.0 : -1.0) * firstAwaySign;
+    std::int64_t finalPosition = 0;
+    if (returnToCenter) {
+        finalPosition = moveToCenter(center, travel, aoToEncoderSign);
+        stopMotion_("homing complete");
+    } else {
+        stopMotion_("travel measurement complete");
+        finalPosition = readSample_().positionCounts;
+    }
 
     HomeCenterResult result;
-    result.leftBoundaryCounts = firstSide == LimitSide::Left ? firstBoundary : secondBoundary;
-    result.rightBoundaryCounts = firstSide == LimitSide::Right ? firstBoundary : secondBoundary;
+    result.leftBoundaryCounts =
+        firstSide == LimitSide::Left ? verifiedFirstBoundary : secondBoundary;
+    result.rightBoundaryCounts =
+        firstSide == LimitSide::Right ? verifiedFirstBoundary : secondBoundary;
     result.centerCounts = center;
     result.travelCounts = travel;
-    result.finalPositionCounts = finalPosition;
-    result.centerErrorCounts = finalPosition - center;
-    return result;
-}
-
-HomeCenterResult HomeCenterController::runUsingStoredTravel(
-    std::int64_t travelCounts) {
-    if (travelCounts < settings_.minimumTravelCounts ||
-        travelCounts > settings_.maximumTravelCounts) {
-        throw std::runtime_error("Stored travel is outside configured range");
-    }
-    auto sample = readSample_();
-    if (sample.leftLimit && sample.rightLimit) {
-        throw std::runtime_error("Both limits are active");
-    }
-
-    LimitSide referenceSide = LimitSide::None;
-    if (sample.leftLimit) {
-        referenceSide = LimitSide::Left;
-        discoverDirectionFromActiveLimit(referenceSide);
-    } else if (sample.rightLimit) {
-        referenceSide = LimitSide::Right;
-        discoverDirectionFromActiveLimit(referenceSide);
-    } else {
-        const double initialVoltage =
-            (positiveVoltageMovesLeft_ ? 1.0 : -1.0) * settings_.searchVoltage;
-        const auto referenceEdge = seek(initialVoltage, LimitSide::None);
-        referenceSide = referenceEdge.side;
-        learnDirection(referenceSide, initialVoltage);
-    }
-
-    const auto referenceBoundary = refine(referenceSide);
-    const double awayAoSign = -towardSign(referenceSide);
-    const auto releasedPosition = backOff(referenceSide);
-    const auto interiorDelta = releasedPosition - referenceBoundary;
-    if (interiorDelta == 0) {
-        throw std::runtime_error("Encoder did not establish an interior direction");
-    }
-    const auto interiorCountSign = interiorDelta > 0 ? 1LL : -1LL;
-    const double aoToEncoderSign =
-        static_cast<double>(interiorCountSign) * awayAoSign;
-    const auto oppositeBoundary =
-        referenceBoundary + interiorCountSign * travelCounts;
-    const auto center = midpoint(referenceBoundary, oppositeBoundary);
-
-    report("Reusing stored travel=" + std::to_string(travelCounts) +
-           ", reference=" + sideName(referenceSide) +
-           ", center=" + std::to_string(center));
-    const auto finalPosition =
-        moveToCenter(center, travelCounts, aoToEncoderSign);
-    stopMotion_("stored-calibration centering complete");
-
-    HomeCenterResult result;
-    result.leftBoundaryCounts = referenceSide == LimitSide::Left
-                                    ? referenceBoundary
-                                    : oppositeBoundary;
-    result.rightBoundaryCounts = referenceSide == LimitSide::Right
-                                     ? referenceBoundary
-                                     : oppositeBoundary;
-    result.centerCounts = center;
-    result.travelCounts = travelCounts;
+    result.forwardTravelCounts = forwardTravel;
+    result.reverseTravelCounts = reverseTravel;
+    result.travelDisagreementCounts = disagreement;
     result.finalPositionCounts = finalPosition;
     result.centerErrorCounts = finalPosition - center;
     return result;
@@ -310,11 +314,13 @@ std::int64_t HomeCenterController::moveToCenter(std::int64_t target,
             }
             return settled.positionCounts;
         }
-        const double magnitude = distance > travel * 15 / 100
-                                     ? settings_.centerFastVoltage
-                                     : distance > travel * 3 / 100
-                                           ? settings_.centerMidVoltage
-                                           : settings_.centerSlowVoltage;
+        const double requestedMagnitude = distance > travel * 15 / 100
+                                              ? settings_.centerFastVoltage
+                                              : distance > travel * 3 / 100
+                                                    ? settings_.centerMidVoltage
+                                                    : settings_.centerSlowVoltage;
+        const double magnitude =
+            std::min(requestedMagnitude, settings_.fineVoltage);
         const double encoderDirection = error > 0 ? 1.0 : -1.0;
         commandMotion_(encoderDirection * aoToEncoderSign * magnitude,
                        LimitSide::None);

@@ -1,4 +1,21 @@
 {
+  "balance_control": {
+    "analog_torque_zero_calibrated": true,
+    "analog_torque_zero_voltage": -0.00135,
+    "angle_gain_rated_torque_per_radian": 4.3,
+    "angular_rate_filter_alpha": 0.15,
+    "angular_rate_gain_rated_torque_per_radian_per_second": 0.15,
+    "default_polarity": 1,
+    "drive_control_mode": "ANALOG_TORQUE",
+    "drive_model": "SGD7S-180A00A002",
+    "frequency_hz": 500,
+    "maximum_absolute_rated_torque_fraction": 1.0,
+    "pendulum_counts_per_revolution": 8000,
+    "pendulum_pulses_per_revolution": 2000,
+    "pn400_setting": 30,
+    "rated_torque_command_voltage": 3.0,
+    "telemetry_divider": 10
+  },
   "hardware": {
     "ni6602": {
       "device": "Dev1",
@@ -12,6 +29,7 @@
       "motor_encoder_counts_per_mm": null,
       "motor_encoder_counts_per_revolution": 8000,
       "motor_encoder_decoding": "X4",
+      "motor_encoder_filter_min_pulse_width_us": 10.0,
       "motor_encoder_pulses_per_revolution": 2000,
       "pendulum_counter": "Dev1/ctr1",
       "pendulum_encoder_a_terminal": "DEFAULT",
@@ -37,28 +55,11 @@
         "timestamp_utc": "2026-08-31T07:05:49Z",
         "voltage": -0.00152587890625
       },
-      "negative_voltage_cart_direction": "RIGHT",
-      "positive_voltage_cart_direction": "LEFT",
+      "negative_voltage_cart_direction": "LEFT",
+      "positive_voltage_cart_direction": "RIGHT",
       "safe_voltage": 0.0,
       "zero_voltage_requires_calibration": false
     }
-  },
-  "balance_control": {
-    "drive_model": "SGD7S-180A00A002",
-    "drive_control_mode": "ANALOG_TORQUE",
-    "pn400_setting": 30,
-    "rated_torque_command_voltage": 3.0,
-    "analog_torque_zero_voltage": -0.00135,
-    "analog_torque_zero_calibrated": true,
-    "frequency_hz": 500,
-    "pendulum_pulses_per_revolution": 2000,
-    "pendulum_counts_per_revolution": 8000,
-    "angular_rate_filter_alpha": 0.15,
-    "angle_gain_rated_torque_per_radian": 4.3,
-    "angular_rate_gain_rated_torque_per_radian_per_second": 0.15,
-    "default_polarity": 1,
-    "maximum_absolute_rated_torque_fraction": 1.0,
-    "telemetry_divider": 10
   },
   "home_center": {
     "away_direction_test_ms": 300,
@@ -73,14 +74,23 @@
     "escape_voltage": 0.03,
     "fine_voltage": 0.02,
     "maximum_reuse_center_error_counts": 50,
-    "maximum_travel_counts": 33253,
+    "maximum_travel_disagreement_fraction": 0.02,
     "minimum_center_tolerance_counts": 10,
     "minimum_travel_counts": 1000,
     "poll_period_ms": 5,
     "search_timeout_seconds": 60.0,
     "search_voltage": 0.1
   },
-  "home_center_calibration": null,
+  "home_center_calibration": {
+    "center_counts": 2835,
+    "center_error_counts": 6,
+    "final_position_counts": 2841,
+    "left_boundary_counts": 14311,
+    "reused_stored_travel": true,
+    "right_boundary_counts": -8640,
+    "timestamp_utc": "2026-09-01T01:49:33Z",
+    "travel_counts": 22951
+  },
   "logging": {
     "directory": "logs",
     "queue_capacity": 4096
