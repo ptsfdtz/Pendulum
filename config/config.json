@@ -5,6 +5,9 @@
     "angle_gain_rated_torque_per_radian": 4.3,
     "angular_rate_filter_alpha": 0.15,
     "angular_rate_gain_rated_torque_per_radian_per_second": 0.15,
+    "cart_integral_gain_rated_torque_per_half_travel_second": 0.002,
+    "cart_position_gain_rated_torque_per_half_travel": 0.02,
+    "cart_velocity_gain_rated_torque_per_half_travel_per_second": 0.01,
     "default_polarity": 1,
     "drive_control_mode": "ANALOG_TORQUE",
     "drive_model": "SGD7S-180A00A002",
@@ -13,6 +16,9 @@
     "downward_zero_settle_timeout_seconds": 20.0,
     "frequency_hz": 500,
     "maximum_absolute_rated_torque_fraction": 1.0,
+    "maximum_absolute_cart_rated_torque_fraction": 0.05,
+    "maximum_balance_position_fraction": 0.85,
+    "maximum_balance_start_position_fraction": 0.1,
     "pendulum_counts_per_revolution": 8000,
     "pendulum_pulses_per_revolution": 2000,
     "pn400_setting": 30,
@@ -68,10 +74,10 @@
   "home_center": {
     "away_direction_test_ms": 300,
     "backoff_timeout_seconds": 5.0,
-    "center_fast_voltage": 0.03,
-    "center_mid_voltage": 0.02,
+    "center_fast_voltage": 0.12,
+    "center_mid_voltage": 0.075,
     "center_settle_ms": 200,
-    "center_slow_voltage": 0.015,
+    "center_slow_voltage": 0.03,
     "center_timeout_seconds": 30.0,
     "center_tolerance_fraction": 0.0005,
     "escape_counts": 200,
@@ -83,7 +89,8 @@
     "minimum_travel_counts": 1000,
     "poll_period_ms": 5,
     "search_timeout_seconds": 60.0,
-    "search_voltage": 0.1
+    "search_voltage": 0.20,
+    "travel_voltage": 0.20
   },
   "home_center_calibration": {
     "center_counts": 2835,

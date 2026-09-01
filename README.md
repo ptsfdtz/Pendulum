@@ -5,8 +5,9 @@ Phase 1 safety and hardware self-test for a single-stage inverted pendulum using
 - NI PCI-6602 through NI-DAQmx
 - Advantech PCI-1723 through DAQNavi/BDaq
 
-The manual console includes a first-stage upright LQR controller. It intentionally excludes the
-untrusted cart encoder from feedback: place the cart at the physical center before every run.
+The manual console includes upright angle control plus normalized cart position, velocity, and
+integral feedback. Cart coordinates come only from a fresh two-limit homing run in the current
+process; saved absolute encoder positions are not reused.
 
 The motor encoder calibration tool is read-only: it never creates AO or Servo output tasks. It
 captures two stable raw counter values around a manually measured cart movement and atomically
@@ -46,10 +47,11 @@ piped input automatically uses the plain line-oriented display instead of ANSI f
 Use `status`, `limits`, `encoder`, `log`, and `help` to inspect the hardware. `servo on` writes
 AO0=0 V and enables the Servo immediately; it stays enabled until `servo off` or a stop event.
 
-At startup, the A-axis downward zero is captured only after a stable 1.5-second sample window. Move the
-cart to its physical center, hold the pendulum upright, and start directly:
+At startup, the A-axis downward zero is captured only after a stable 1.5-second sample window. Home
+the cart in the current console process, then hold the pendulum upright and start:
 
 ```text
+home center
 balance start +
 ```
 
@@ -63,9 +65,11 @@ position. `balance start` captures
 the current manually held upright count as the stabilization target; it does not assume that the
 mechanical upright count is exactly zero or persist it across process starts. The downward-to-
 upright difference should be near half a revolution (about 4000 counts) and is logged for
-inspection, but it does not block starting. The controller uses pendulum angle and angular rate
-relative to the captured target only; cart position and velocity are forced to zero in the state
-vector. Both physical limits still command AO0=0 V and Servo OFF.
+inspection, but it does not block starting. The controller combines pendulum angle/rate with cart
+position, velocity, and position integral feedback. Cart position is normalized so each physical
+limit is approximately one half-travel from the session center. Both physical limits still command
+AO0=0 V and Servo OFF, and the balance loop stops at the configured software travel envelope before
+reaching them.
 
 The first-stage controller commands the Yaskawa SGD7S-180A00A002 in analog torque mode. With
 `Pn400=30`, 3.0 V represents 100% rated torque. The controller computes a signed fraction of rated
@@ -83,11 +87,17 @@ torque/(radian/second). Change them without restarting or recompiling while the 
 ```text
 balance kp 2.5
 balance kd 0.12
+balance kx 0.02
+balance kv 0.01
+balance ki 0.002
 balance gains
 ```
 
 Runtime gain changes take effect on the next A-axis sample and reset to `config.json` values when
-the console restarts. The console requests 1 ms Windows timer resolution so the configured 2 ms
+the console restarts. Updating any gain resets the cart integral state. The cart correction is
+independently limited by `maximum_absolute_cart_rated_torque_fraction`; balance can start only
+inside `maximum_balance_start_position_fraction` and stops at
+`maximum_balance_position_fraction`. The console requests 1 ms Windows timer resolution so the configured 2 ms
 encoder monitor period does not degrade to the default approximately 16 ms scheduler interval.
 
 Before tuning, hold AO0 at exactly 0 V and use the SGD7S `Fn009` function to automatically adjust
@@ -146,8 +156,11 @@ from `config.json`. The settled position is checked after outputs stop. Every pa
 AO0=0 V and Servo OFF. After a limit stop, the release phase accepts only motion away from that
 active limit.
 
-After round-trip validation, the return-to-center profile uses 0.03 V while farther than 15% of
-travel from center, 0.02 V from 15% to 3%, and 0.015 V for the final approach.
+The initial limit search and the two long full-travel measurements use 0.20 V, while boundary
+refinement continues to use the lower 0.02 V `fine_voltage`. After round-trip validation, the
+return-to-center profile uses 0.12 V while farther than 15% of travel from center, 0.075 V from
+15% to 3%, and 0.03 V for the final approach. Configuration validation caps every automatic
+homing motion at 0.20 V.
 
 The first boundary is intentionally not assumed to be LEFT or RIGHT. The controller accepts the
 first limit actually reached, learns the AO direction from that event, and then requires the second

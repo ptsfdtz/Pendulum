@@ -83,8 +83,8 @@ HomeCenterResult HomeCenterController::execute(bool returnToCenter,
 
     const auto secondSide = opposite(firstSide);
     report(std::string("Measuring full travel toward ") + sideName(secondSide) +
-           " at fine voltage");
-    const auto secondEdge = seek(towardSign(secondSide) * settings_.fineVoltage,
+           " at travel voltage");
+    const auto secondEdge = seek(towardSign(secondSide) * settings_.travelVoltage,
                                  secondSide);
     static_cast<void>(secondEdge);
     const auto secondBoundary = refine(secondSide);
@@ -106,8 +106,8 @@ HomeCenterResult HomeCenterController::execute(bool returnToCenter,
     }
 
     report(std::string("Verifying reverse travel toward ") + sideName(firstSide) +
-           " at fine voltage");
-    static_cast<void>(seek(towardSign(firstSide) * settings_.fineVoltage,
+           " at travel voltage");
+    static_cast<void>(seek(towardSign(firstSide) * settings_.travelVoltage,
                            firstSide));
     const auto verifiedFirstBoundary = refine(firstSide);
     report(std::string("Verified ") + sideName(firstSide) + " boundary=" +

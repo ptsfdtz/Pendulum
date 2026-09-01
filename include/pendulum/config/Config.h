@@ -85,12 +85,13 @@ struct MotorZeroCalibrationConfig {
 };
 
 struct HomeCenterConfig {
-    double searchVoltage{0.10};
+    double searchVoltage{0.20};
+    double travelVoltage{0.20};
     double fineVoltage{0.020};
     double escapeVoltage{0.030};
-    double centerFastVoltage{0.030};
-    double centerMidVoltage{0.020};
-    double centerSlowVoltage{0.015};
+    double centerFastVoltage{0.120};
+    double centerMidVoltage{0.075};
+    double centerSlowVoltage{0.030};
     std::int64_t escapeCounts{200};
     std::int64_t minimumTravelCounts{1000};
     double maximumTravelDisagreementFraction{0.02};
@@ -121,6 +122,12 @@ struct BalanceControlConfig {
     double angularRateFilterAlpha{0.15};
     double angleGainRatedTorquePerRadian{2.0};
     double angularRateGainRatedTorquePerRadianPerSecond{0.1};
+    double cartPositionGainRatedTorquePerHalfTravel{0.02};
+    double cartVelocityGainRatedTorquePerHalfTravelPerSecond{0.01};
+    double cartIntegralGainRatedTorquePerHalfTravelSecond{0.002};
+    double maximumAbsoluteCartRatedTorqueFraction{0.05};
+    double maximumBalanceStartPositionFraction{0.10};
+    double maximumBalancePositionFraction{0.85};
     int defaultPolarity{1};
     double maximumAbsoluteRatedTorqueFraction{1.0};
     std::uint32_t telemetryDivider{10};

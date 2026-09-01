@@ -236,6 +236,7 @@ AppConfig AppConfig::load(const std::filesystem::path& path) {
     const auto& homing = requireObject(document, "home_center");
     auto& home = config.homeCenter;
     home.searchVoltage = requireValue<double>(homing, "search_voltage");
+    home.travelVoltage = requireValue<double>(homing, "travel_voltage");
     home.fineVoltage = requireValue<double>(homing, "fine_voltage");
     home.escapeVoltage = requireValue<double>(homing, "escape_voltage");
     home.centerFastVoltage = requireValue<double>(homing, "center_fast_voltage");
@@ -309,6 +310,18 @@ AppConfig AppConfig::load(const std::filesystem::path& path) {
         requireValue<double>(balance, "angle_gain_rated_torque_per_radian");
     control.angularRateGainRatedTorquePerRadianPerSecond = requireValue<double>(
         balance, "angular_rate_gain_rated_torque_per_radian_per_second");
+    control.cartPositionGainRatedTorquePerHalfTravel = requireValue<double>(
+        balance, "cart_position_gain_rated_torque_per_half_travel");
+    control.cartVelocityGainRatedTorquePerHalfTravelPerSecond = requireValue<double>(
+        balance, "cart_velocity_gain_rated_torque_per_half_travel_per_second");
+    control.cartIntegralGainRatedTorquePerHalfTravelSecond = requireValue<double>(
+        balance, "cart_integral_gain_rated_torque_per_half_travel_second");
+    control.maximumAbsoluteCartRatedTorqueFraction = requireValue<double>(
+        balance, "maximum_absolute_cart_rated_torque_fraction");
+    control.maximumBalanceStartPositionFraction = requireValue<double>(
+        balance, "maximum_balance_start_position_fraction");
+    control.maximumBalancePositionFraction = requireValue<double>(
+        balance, "maximum_balance_position_fraction");
     control.defaultPolarity = requireValue<int>(balance, "default_polarity");
     control.maximumAbsoluteRatedTorqueFraction = requireValue<double>(
         balance, "maximum_absolute_rated_torque_fraction");
@@ -577,12 +590,22 @@ void AppConfig::validateForManualConsole() const {
     const auto positiveFiniteHome = [](double value) {
         return std::isfinite(value) && value > 0.0;
     };
+    constexpr double maximumHomeVoltage = 0.20;
     if (!positiveFiniteHome(home.searchVoltage) ||
+        !positiveFiniteHome(home.travelVoltage) ||
         !positiveFiniteHome(home.fineVoltage) ||
         !positiveFiniteHome(home.escapeVoltage) ||
         !positiveFiniteHome(home.centerFastVoltage) ||
         !positiveFiniteHome(home.centerMidVoltage) ||
         !positiveFiniteHome(home.centerSlowVoltage) ||
+        home.fineVoltage > home.travelVoltage ||
+        home.searchVoltage > maximumHomeVoltage ||
+        home.travelVoltage > maximumHomeVoltage ||
+        home.fineVoltage > maximumHomeVoltage ||
+        home.escapeVoltage > maximumHomeVoltage ||
+        home.centerFastVoltage > maximumHomeVoltage ||
+        home.centerMidVoltage > maximumHomeVoltage ||
+        home.centerSlowVoltage > maximumHomeVoltage ||
         home.centerFastVoltage < home.centerMidVoltage ||
         home.centerMidVoltage < home.centerSlowVoltage ||
         home.escapeCounts <= 0 || home.minimumTravelCounts <= 0 ||
@@ -639,6 +662,22 @@ void AppConfig::validateForManualConsole() const {
         control.angleGainRatedTorquePerRadian < 0.0 ||
         !std::isfinite(control.angularRateGainRatedTorquePerRadianPerSecond) ||
         control.angularRateGainRatedTorquePerRadianPerSecond < 0.0 ||
+        !std::isfinite(control.cartPositionGainRatedTorquePerHalfTravel) ||
+        control.cartPositionGainRatedTorquePerHalfTravel < 0.0 ||
+        !std::isfinite(control.cartVelocityGainRatedTorquePerHalfTravelPerSecond) ||
+        control.cartVelocityGainRatedTorquePerHalfTravelPerSecond < 0.0 ||
+        !std::isfinite(control.cartIntegralGainRatedTorquePerHalfTravelSecond) ||
+        control.cartIntegralGainRatedTorquePerHalfTravelSecond < 0.0 ||
+        !std::isfinite(control.maximumAbsoluteCartRatedTorqueFraction) ||
+        control.maximumAbsoluteCartRatedTorqueFraction < 0.0 ||
+        control.maximumAbsoluteCartRatedTorqueFraction >
+            control.maximumAbsoluteRatedTorqueFraction ||
+        !std::isfinite(control.maximumBalanceStartPositionFraction) ||
+        control.maximumBalanceStartPositionFraction <= 0.0 ||
+        !std::isfinite(control.maximumBalancePositionFraction) ||
+        control.maximumBalancePositionFraction <=
+            control.maximumBalanceStartPositionFraction ||
+        control.maximumBalancePositionFraction > 1.0 ||
         (control.defaultPolarity != -1 && control.defaultPolarity != 1) ||
         !positiveFiniteHome(control.maximumAbsoluteRatedTorqueFraction) ||
         control.maximumAbsoluteRatedTorqueFraction > 1.0 ||

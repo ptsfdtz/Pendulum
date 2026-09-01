@@ -56,9 +56,12 @@ void testDefaultConfig(const std::filesystem::path& path) {
             "home-center escape distance mismatch");
     require(config.homeCenter.maximumTravelDisagreementFraction == 0.02,
             "home-center travel agreement threshold mismatch");
-    require(config.homeCenter.centerFastVoltage == 0.03 &&
-                config.homeCenter.centerMidVoltage == 0.02 &&
-                config.homeCenter.centerSlowVoltage == 0.015,
+    require(config.homeCenter.searchVoltage == 0.20 &&
+                config.homeCenter.travelVoltage == 0.20,
+            "home-center search/traversal speed mismatch");
+    require(config.homeCenter.centerFastVoltage == 0.12 &&
+                config.homeCenter.centerMidVoltage == 0.075 &&
+                config.homeCenter.centerSlowVoltage == 0.03,
             "home-center return speed profile mismatch");
     require(config.balanceControl.pendulumPulsesPerRevolution == 2000,
             "pendulum PPR mismatch");
@@ -81,6 +84,14 @@ void testDefaultConfig(const std::filesystem::path& path) {
                 config.balanceControl.angularRateGainRatedTorquePerRadianPerSecond -
                 0.15) < 1e-15,
             "angle PD rated-torque derivative gain mismatch");
+    require(config.balanceControl.cartPositionGainRatedTorquePerHalfTravel == 0.02 &&
+                config.balanceControl.cartVelocityGainRatedTorquePerHalfTravelPerSecond == 0.01 &&
+                config.balanceControl.cartIntegralGainRatedTorquePerHalfTravelSecond == 0.002 &&
+                config.balanceControl.maximumAbsoluteCartRatedTorqueFraction == 0.05,
+            "cart-centering gains mismatch");
+    require(config.balanceControl.maximumBalanceStartPositionFraction == 0.1 &&
+                config.balanceControl.maximumBalancePositionFraction == 0.85,
+            "cart-centering safety envelope mismatch");
     require(std::abs(config.balanceControl.maximumAbsoluteRatedTorqueFraction *
                          config.balanceControl.ratedTorqueCommandVoltage -
                      3.0) < 1e-15,
@@ -172,6 +183,21 @@ void testAnglePdController() {
     state.pendulumAngleRadians = 20.0;
     require(controller.ratedTorqueFraction(state, 1) == 1.0,
             "angle PD 100% rated-torque clamp is wrong");
+
+    pendulum::control::AnglePdController cartController(
+        0.0, 0.0, 1.0, 0.1, 0.2, 0.3, 0.5);
+    pendulum::control::CartCenteringFeedback cart;
+    cart.positionHalfTravel = 0.2;
+    cart.velocityHalfTravelPerSecond = 0.1;
+    cart.samplePeriodSeconds = 1.0;
+    const auto first = cartController.update({}, 1, cart);
+    require(std::abs(first.cartRatedTorqueFraction + 0.1) < 1e-12,
+            "cart PID feedback output is wrong");
+    cart.positionHalfTravel = 0.0;
+    cart.velocityHalfTravelPerSecond = 0.0;
+    const auto second = cartController.update({}, 1, cart);
+    require(std::abs(second.cartRatedTorqueFraction + 0.06) < 1e-12,
+            "cart integral feedback did not retain the centering bias");
 }
 
 void testSafetyOrderAndFaultContainment() {
