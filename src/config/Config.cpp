@@ -144,6 +144,8 @@ AppConfig AppConfig::load(const std::filesystem::path& path) {
         requireValue<std::string>(ni, "pendulum_encoder_b_terminal");
     config.ni6602.pendulumEncoderDecoding =
         requireValue<std::string>(ni, "pendulum_encoder_decoding");
+    config.ni6602.pendulumEncoderFilterMinPulseWidthMicroseconds =
+        requireValue<double>(ni, "pendulum_encoder_filter_min_pulse_width_us");
     config.ni6602.leftLimitLine = requireValue<std::string>(ni, "left_limit_line");
     config.ni6602.leftLimitActiveHigh = requireValue<bool>(ni, "left_limit_active_high");
     config.ni6602.rightLimitLine = requireValue<std::string>(ni, "right_limit_line");
@@ -295,6 +297,12 @@ AppConfig AppConfig::load(const std::filesystem::path& path) {
         requireValue<std::uint32_t>(balance, "pendulum_pulses_per_revolution");
     control.pendulumCountsPerRevolution =
         requireValue<std::uint32_t>(balance, "pendulum_counts_per_revolution");
+    control.downwardZeroCaptureSeconds =
+        requireValue<double>(balance, "downward_zero_capture_seconds");
+    control.downwardZeroSettleTimeoutSeconds =
+        requireValue<double>(balance, "downward_zero_settle_timeout_seconds");
+    control.downwardZeroMaximumSpanCounts =
+        requireValue<std::int64_t>(balance, "downward_zero_maximum_span_counts");
     control.angularRateFilterAlpha =
         requireValue<double>(balance, "angular_rate_filter_alpha");
     control.angleGainRatedTorquePerRadian =
@@ -421,6 +429,11 @@ void AppConfig::validateForEnumeration() const {
         ni6602.motorEncoderFilterMinPulseWidthMicroseconds < 0.0) {
         throw std::runtime_error(
             "motor_encoder_filter_min_pulse_width_us must be finite and non-negative");
+    }
+    if (!std::isfinite(ni6602.pendulumEncoderFilterMinPulseWidthMicroseconds) ||
+        ni6602.pendulumEncoderFilterMinPulseWidthMicroseconds < 0.0) {
+        throw std::runtime_error(
+            "pendulum_encoder_filter_min_pulse_width_us must be finite and non-negative");
     }
     requireNotEmpty(pci1723.deviceDescription, "hardware.pci1723.device_description");
     if (pci1723.aoChannel < 0) {
@@ -570,6 +583,8 @@ void AppConfig::validateForManualConsole() const {
         !positiveFiniteHome(home.centerFastVoltage) ||
         !positiveFiniteHome(home.centerMidVoltage) ||
         !positiveFiniteHome(home.centerSlowVoltage) ||
+        home.centerFastVoltage < home.centerMidVoltage ||
+        home.centerMidVoltage < home.centerSlowVoltage ||
         home.escapeCounts <= 0 || home.minimumTravelCounts <= 0 ||
         !std::isfinite(home.maximumTravelDisagreementFraction) ||
         home.maximumTravelDisagreementFraction < 0.0 ||
@@ -613,6 +628,10 @@ void AppConfig::validateForManualConsole() const {
         control.pendulumPulsesPerRevolution == 0 ||
         control.pendulumCountsPerRevolution !=
             control.pendulumPulsesPerRevolution * 4ULL ||
+        !positiveFiniteHome(control.downwardZeroCaptureSeconds) ||
+        !positiveFiniteHome(control.downwardZeroSettleTimeoutSeconds) ||
+        control.downwardZeroSettleTimeoutSeconds < control.downwardZeroCaptureSeconds ||
+        control.downwardZeroMaximumSpanCounts < 0 ||
         !std::isfinite(control.angularRateFilterAlpha) ||
         control.angularRateFilterAlpha <= 0.0 ||
         control.angularRateFilterAlpha > 1.0 ||

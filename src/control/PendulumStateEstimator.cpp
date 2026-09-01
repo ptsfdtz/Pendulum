@@ -1,5 +1,6 @@
 #include "pendulum/control/PendulumStateEstimator.h"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
@@ -71,6 +72,19 @@ std::int64_t PendulumStateEstimator::wrappedCounts(
         wrapped += countsPerRevolution;
     }
     return wrapped;
+}
+
+std::int64_t PendulumStateEstimator::stableRepresentative(
+    const std::vector<std::int64_t>& samples, std::int64_t maximumSpanCounts) {
+    if (samples.empty() || maximumSpanCounts < 0) {
+        throw std::invalid_argument("Invalid pendulum stability window");
+    }
+    auto sorted = samples;
+    std::sort(sorted.begin(), sorted.end());
+    if (sorted.back() - sorted.front() > maximumSpanCounts) {
+        throw std::runtime_error("Pendulum is not stationary");
+    }
+    return sorted[sorted.size() / 2];
 }
 
 }  // namespace pendulum::control

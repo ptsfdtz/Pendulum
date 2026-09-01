@@ -42,7 +42,8 @@ public:
 
     void configurePendulumEncoderRaw(const std::string& counter,
                                      const std::string& phaseATerminal,
-                                     const std::string& phaseBTerminal);
+                                     const std::string& phaseBTerminal,
+                                     double filterMinPulseWidthSeconds);
     std::uint32_t readPendulumEncoderRaw();
     bool pendulumEncoderConfigured() const noexcept;
 

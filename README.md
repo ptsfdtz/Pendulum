@@ -46,7 +46,7 @@ piped input automatically uses the plain line-oriented display instead of ANSI f
 Use `status`, `limits`, `encoder`, `log`, and `help` to inspect the hardware. `servo on` writes
 AO0=0 V and enables the Servo immediately; it stays enabled until `servo off` or a stop event.
 
-At startup, the first valid A-axis sample is automatically captured as the downward zero. Move the
+At startup, the A-axis downward zero is captured only after a stable 1.5-second sample window. Move the
 cart to its physical center, hold the pendulum upright, and start directly:
 
 ```text
@@ -56,7 +56,8 @@ balance start +
 Use `balance zero` only when you need to recapture the freely hanging reference during the same
 console session.
 
-The A-axis encoder is configured as 2000 PPR with X4 decoding: 8000 counts/revolution,
+The A-axis encoder uses a 10 us A/B minimum-pulse-width filter and is configured as 2000 PPR with
+X4 decoding: 8000 counts/revolution,
 0.045 degrees/count. The automatic startup capture (or `balance zero`) records the freely hanging
 position. `balance start` captures
 the current manually held upright count as the stabilization target; it does not assume that the
@@ -144,6 +145,9 @@ The result is retained only in process memory for status display; it is never wr
 from `config.json`. The settled position is checked after outputs stop. Every path finishes at
 AO0=0 V and Servo OFF. After a limit stop, the release phase accepts only motion away from that
 active limit.
+
+After round-trip validation, the return-to-center profile uses 0.03 V while farther than 15% of
+travel from center, 0.02 V from 15% to 3%, and 0.015 V for the final approach.
 
 The first boundary is intentionally not assumed to be LEFT or RIGHT. The controller accepts the
 first limit actually reached, learns the AO direction from that event, and then requires the second

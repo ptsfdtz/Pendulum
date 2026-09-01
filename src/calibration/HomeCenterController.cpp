@@ -314,13 +314,11 @@ std::int64_t HomeCenterController::moveToCenter(std::int64_t target,
             }
             return settled.positionCounts;
         }
-        const double requestedMagnitude = distance > travel * 15 / 100
-                                              ? settings_.centerFastVoltage
-                                              : distance > travel * 3 / 100
-                                                    ? settings_.centerMidVoltage
-                                                    : settings_.centerSlowVoltage;
-        const double magnitude =
-            std::min(requestedMagnitude, settings_.fineVoltage);
+        const double magnitude = distance > travel * 15 / 100
+                                     ? settings_.centerFastVoltage
+                                     : distance > travel * 3 / 100
+                                           ? settings_.centerMidVoltage
+                                           : settings_.centerSlowVoltage;
         const double encoderDirection = error > 0 ? 1.0 : -1.0;
         commandMotion_(encoderDirection * aoToEncoderSign * magnitude,
                        LimitSide::None);

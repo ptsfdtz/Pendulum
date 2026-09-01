@@ -36,6 +36,12 @@ void testDefaultConfig(const std::filesystem::path& path) {
             "pendulum counter mismatch");
     require(config.ni6602.pendulumEncoderDecoding == "X4",
             "pendulum encoder decoding mismatch");
+    require(config.ni6602.pendulumEncoderFilterMinPulseWidthMicroseconds == 10.0,
+            "pendulum encoder digital filter mismatch");
+    require(config.balanceControl.downwardZeroCaptureSeconds == 1.5 &&
+                config.balanceControl.downwardZeroSettleTimeoutSeconds == 20.0 &&
+                config.balanceControl.downwardZeroMaximumSpanCounts == 8,
+            "stable downward-zero capture settings mismatch");
     require(config.ni6602.motorEncoderFilterMinPulseWidthMicroseconds == 10.0,
             "motor encoder digital filter mismatch");
     require(config.pci1723.deviceDescription == "PCI-1723,BID#15",
@@ -50,6 +56,10 @@ void testDefaultConfig(const std::filesystem::path& path) {
             "home-center escape distance mismatch");
     require(config.homeCenter.maximumTravelDisagreementFraction == 0.02,
             "home-center travel agreement threshold mismatch");
+    require(config.homeCenter.centerFastVoltage == 0.03 &&
+                config.homeCenter.centerMidVoltage == 0.02 &&
+                config.homeCenter.centerSlowVoltage == 0.015,
+            "home-center return speed profile mismatch");
     require(config.balanceControl.pendulumPulsesPerRevolution == 2000,
             "pendulum PPR mismatch");
     require(config.balanceControl.pendulumCountsPerRevolution == 8000,
@@ -114,6 +124,19 @@ void testPendulumStateEstimator() {
     require(std::abs(wrapped.pendulumAngularRateRadiansPerSecond -
                      20.0 * (2.0 * std::numbers::pi / 8000.0) / 0.01) < 1e-9,
             "pendulum angular-rate rollover handling is wrong");
+
+    require(PendulumStateEstimator::stableRepresentative(
+                {100, 101, 99, 100, 102}, 3) == 100,
+            "stable pendulum median is wrong");
+    bool unstableRejected = false;
+    try {
+        static_cast<void>(PendulumStateEstimator::stableRepresentative(
+            {100, 101, 120, 99}, 8));
+    } catch (const std::runtime_error&) {
+        unstableRejected = true;
+    }
+    require(unstableRejected,
+            "moving pendulum was accepted as a downward-zero reference");
 }
 
 void testLqrController() {
@@ -217,8 +240,8 @@ void testHomeCenterMath() {
     settings.searchVoltage = 0.1;
     settings.fineVoltage = 0.02;
     settings.escapeVoltage = 0.03;
-    settings.centerFastVoltage = 0.1;
-    settings.centerMidVoltage = 0.05;
+    settings.centerFastVoltage = 0.03;
+    settings.centerMidVoltage = 0.02;
     settings.centerSlowVoltage = 0.015;
     settings.escapeCounts = 2;
     settings.minimumTravelCounts = 10;

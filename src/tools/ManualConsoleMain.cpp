@@ -105,11 +105,7 @@ public:
         initializeHardware();
         monitor_ = std::jthread([this](std::stop_token stopToken) { monitor(stopToken); });
         waitForFirstSample();
-        const auto startupPendulumSample = latestPendulumSample();
-        pendulumDownCount_.store(startupPendulumSample.positionCounts);
-        pendulumZeroCaptured_.store(true);
-        record("Pendulum downward zero initialized automatically at count=" +
-               std::to_string(startupPendulumSample.positionCounts));
+        static_cast<void>(captureStablePendulumZero("startup"));
 
         record("Console ready");
         if (!timerResolution.active()) {
@@ -479,7 +475,9 @@ private:
                                       1e-6);
         ni_.configurePendulumEncoderRaw(config_.ni6602.pendulumCounter,
                                         config_.ni6602.pendulumEncoderATerminal,
-                                        config_.ni6602.pendulumEncoderBTerminal);
+                                        config_.ni6602.pendulumEncoderBTerminal,
+                                        config_.ni6602.pendulumEncoderFilterMinPulseWidthMicroseconds *
+                                            1e-6);
         record("Hardware initialized at AO0=0 V and Servo OFF");
     }
 
@@ -951,21 +949,67 @@ private:
 
     void capturePendulumZero() {
         if (balanceRunning_.load()) {
-            notify("Stop balance control before capturing the upright zero.", true);
+            notify("Stop balance control before capturing the downward zero.", true);
             return;
         }
         if (!sampleReady_.load() || faultLatched_.load()) {
             notify("Downward zero capture requires live encoder samples.", true);
             return;
         }
-        const auto count = pendulumPositionCounts_.load();
-        pendulumDownCount_.store(count);
-        pendulumZeroCaptured_.store(true);
-        balanceAngleDegrees_.store(0.0);
-        balanceAngularRateDegrees_.store(0.0);
-        record("Pendulum downward zero captured at count=" + std::to_string(count));
-        notify("Pendulum downward zero captured: count=" +
-               std::to_string(count));
+        if (servoOn_.load() || calibrationRunning_.load() || homingRunning_.load()) {
+            notify("Downward zero capture requires Servo OFF and no active motion.", true);
+            return;
+        }
+        static_cast<void>(captureStablePendulumZero("manual"));
+    }
+
+    bool captureStablePendulumZero(const std::string& reason) {
+        constexpr auto samplePeriod = 10ms;
+        const auto requiredSamples = std::max<std::size_t>(
+            2, static_cast<std::size_t>(std::ceil(
+                   config_.balanceControl.downwardZeroCaptureSeconds / 0.010)));
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::duration<double>(
+                                  config_.balanceControl.downwardZeroSettleTimeoutSeconds);
+        std::deque<std::int64_t> window;
+        pendulumZeroCaptured_.store(false);
+        while (std::chrono::steady_clock::now() < deadline &&
+               !faultLatched_.load() && !safety_.stopRequested()) {
+            window.push_back(pendulumPositionCounts_.load());
+            if (window.size() > requiredSamples) {
+                window.pop_front();
+            }
+            if (window.size() == requiredSamples) {
+                const std::vector<std::int64_t> samples(window.begin(), window.end());
+                try {
+                    const auto count =
+                        pendulum::control::PendulumStateEstimator::stableRepresentative(
+                            samples,
+                            config_.balanceControl.downwardZeroMaximumSpanCounts);
+                    const auto [minimum, maximum] =
+                        std::minmax_element(samples.begin(), samples.end());
+                    pendulumDownCount_.store(count);
+                    pendulumZeroCaptured_.store(true);
+                    balanceAngleDegrees_.store(0.0);
+                    balanceAngularRateDegrees_.store(0.0);
+                    const auto message =
+                        "Pendulum downward zero captured (" + reason + "): count=" +
+                        std::to_string(count) + ", span=" +
+                        std::to_string(*maximum - *minimum) + " counts";
+                    record(message);
+                    notify(message);
+                    return true;
+                } catch (const std::runtime_error&) {
+                    // Keep observing until a complete stationary window is available.
+                }
+            }
+            std::this_thread::sleep_for(samplePeriod);
+        }
+        const auto message = "Pendulum downward zero not captured (" + reason +
+                             "): no stable window before timeout";
+        record(message, pendulum::logging::Level::Warning);
+        notify(message, true);
+        return false;
     }
 
     void startBalance(std::optional<int> polarityOverride) {
@@ -1311,6 +1355,9 @@ private:
 
             const auto result = measureOnly ? controller.measureTravel()
                                             : controller.run();
+            if (!measureOnly) {
+                static_cast<void>(captureStablePendulumZero("post-home"));
+            }
             homeResultAvailable_.store(true);
             homeCalibrationTravel_.store(result.travelCounts);
             homeCalibrationError_.store(result.centerErrorCounts);

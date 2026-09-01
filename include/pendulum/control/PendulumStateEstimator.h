@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <vector>
 
 namespace pendulum::control {
 
@@ -24,6 +25,8 @@ public:
 
     static std::int64_t wrappedCounts(std::int64_t countDelta,
                                       std::int64_t countsPerRevolution);
+    static std::int64_t stableRepresentative(
+        const std::vector<std::int64_t>& samples, std::int64_t maximumSpanCounts);
 
 private:
     std::int64_t countsPerRevolution_;

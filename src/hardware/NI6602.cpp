@@ -198,10 +198,12 @@ bool NI6602::motorEncoderConfigured() const noexcept {
 
 void NI6602::configurePendulumEncoderRaw(const std::string& counter,
                                          const std::string& phaseATerminal,
-                                         const std::string& phaseBTerminal) {
+                                         const std::string& phaseBTerminal,
+                                         double filterMinPulseWidthSeconds) {
     if (counter.empty() || counter == "UNCONFIRMED" || phaseATerminal.empty() ||
         phaseATerminal == "UNCONFIRMED" || phaseBTerminal.empty() ||
-        phaseBTerminal == "UNCONFIRMED") {
+        phaseBTerminal == "UNCONFIRMED" ||
+        !std::isfinite(filterMinPulseWidthSeconds) || filterMinPulseWidthSeconds < 0.0) {
         throw std::invalid_argument("Invalid or unconfirmed pendulum encoder configuration");
     }
     const bool useDefaultRouting = phaseATerminal == "DEFAULT" && phaseBTerminal == "DEFAULT";
@@ -230,6 +232,20 @@ void NI6602::configurePendulumEncoderRaw(const std::string& counter,
             checkDaq(DAQmxSetCIEncoderBInputTerm(impl_->pendulumEncoderTask.get(), "",
                                                  phaseBTerminal.c_str()),
                      "DAQmxSetCIEncoderBInputTerm(pendulum encoder)");
+        }
+        if (filterMinPulseWidthSeconds > 0.0) {
+            checkDaq(DAQmxSetCIEncoderAInputDigFltrMinPulseWidth(
+                         impl_->pendulumEncoderTask.get(), "", filterMinPulseWidthSeconds),
+                     "DAQmxSetCIEncoderAInputDigFltrMinPulseWidth(pendulum encoder)");
+            checkDaq(DAQmxSetCIEncoderBInputDigFltrMinPulseWidth(
+                         impl_->pendulumEncoderTask.get(), "", filterMinPulseWidthSeconds),
+                     "DAQmxSetCIEncoderBInputDigFltrMinPulseWidth(pendulum encoder)");
+            checkDaq(DAQmxSetCIEncoderAInputDigFltrEnable(
+                         impl_->pendulumEncoderTask.get(), "", true),
+                     "DAQmxSetCIEncoderAInputDigFltrEnable(pendulum encoder)");
+            checkDaq(DAQmxSetCIEncoderBInputDigFltrEnable(
+                         impl_->pendulumEncoderTask.get(), "", true),
+                     "DAQmxSetCIEncoderBInputDigFltrEnable(pendulum encoder)");
         }
         checkDaq(DAQmxStartTask(impl_->pendulumEncoderTask.get()),
                  "DAQmxStartTask(pendulum encoder)");

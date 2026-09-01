@@ -53,6 +53,7 @@ as the stationary command while Servo is ON.
 - [x] Encoder B input: CTR0 AUX, connector pin 40 (DAQmx default routing)
 - [x] A/B digital minimum-pulse-width filter: 10 us (verified accepted by PCI-6602)
 - [x] Filtered powered full travel: 33112 counts on 2026-09-01
+- [x] Pendulum A-axis A/B digital minimum-pulse-width filter: 10 us
 - [ ] Manual distance calibration completed and `counts_per_mm` saved
 
 The calibration tool intentionally refuses to start until the counter and both encoder terminals

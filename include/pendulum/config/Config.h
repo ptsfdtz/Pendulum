@@ -24,6 +24,7 @@ struct Ni6602Config {
     std::string pendulumEncoderATerminal;
     std::string pendulumEncoderBTerminal;
     std::string pendulumEncoderDecoding;
+    double pendulumEncoderFilterMinPulseWidthMicroseconds{0.0};
     std::string leftLimitLine;
     bool leftLimitActiveHigh{true};
     std::string rightLimitLine;
@@ -87,8 +88,8 @@ struct HomeCenterConfig {
     double searchVoltage{0.10};
     double fineVoltage{0.020};
     double escapeVoltage{0.030};
-    double centerFastVoltage{0.10};
-    double centerMidVoltage{0.050};
+    double centerFastVoltage{0.030};
+    double centerMidVoltage{0.020};
     double centerSlowVoltage{0.015};
     std::int64_t escapeCounts{200};
     std::int64_t minimumTravelCounts{1000};
@@ -114,6 +115,9 @@ struct BalanceControlConfig {
     std::uint32_t frequencyHz{500};
     std::uint32_t pendulumPulsesPerRevolution{2000};
     std::uint32_t pendulumCountsPerRevolution{8000};
+    double downwardZeroCaptureSeconds{1.5};
+    double downwardZeroSettleTimeoutSeconds{20.0};
+    std::int64_t downwardZeroMaximumSpanCounts{8};
     double angularRateFilterAlpha{0.15};
     double angleGainRatedTorquePerRadian{2.0};
     double angularRateGainRatedTorquePerRadianPerSecond{0.1};
