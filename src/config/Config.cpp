@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
+#include <numbers>
 #include <sstream>
 #include <stdexcept>
 
@@ -306,10 +307,18 @@ AppConfig AppConfig::load(const std::filesystem::path& path) {
         requireValue<std::int64_t>(balance, "downward_zero_maximum_span_counts");
     control.angularRateFilterAlpha =
         requireValue<double>(balance, "angular_rate_filter_alpha");
-    control.angleGainRatedTorquePerRadian =
-        requireValue<double>(balance, "angle_gain_rated_torque_per_radian");
-    control.angularRateGainRatedTorquePerRadianPerSecond = requireValue<double>(
-        balance, "angular_rate_gain_rated_torque_per_radian_per_second");
+    control.angleGainPercentAtMaximumAngle =
+        requireValue<double>(balance, "angle_gain_percent_at_maximum_angle");
+    control.angularRateGainPercentAtMaximumRate = requireValue<double>(
+        balance, "angular_rate_gain_percent_at_maximum_rate");
+    control.maximumBalanceAngularRateDegreesPerSecond = requireValue<double>(
+        balance, "maximum_balance_angular_rate_degrees_per_second");
+    control.angleRelayBoostRatedTorqueFraction = requireValue<double>(
+        balance, "angle_relay_boost_rated_torque_fraction");
+    control.angleRelayBoostDeadbandCounts = requireValue<std::int64_t>(
+        balance, "angle_relay_boost_deadband_counts");
+    control.maximumBalanceAngleRadians = requireValue<double>(
+        balance, "maximum_balance_angle_radians");
     control.cartPositionGainRatedTorquePerHalfTravel = requireValue<double>(
         balance, "cart_position_gain_rated_torque_per_half_travel");
     control.cartVelocityGainRatedTorquePerHalfTravelPerSecond = requireValue<double>(
@@ -656,12 +665,24 @@ void AppConfig::validateForManualConsole() const {
         control.downwardZeroSettleTimeoutSeconds < control.downwardZeroCaptureSeconds ||
         control.downwardZeroMaximumSpanCounts < 0 ||
         !std::isfinite(control.angularRateFilterAlpha) ||
-        control.angularRateFilterAlpha <= 0.0 ||
-        control.angularRateFilterAlpha > 1.0 ||
-        !std::isfinite(control.angleGainRatedTorquePerRadian) ||
-        control.angleGainRatedTorquePerRadian < 0.0 ||
-        !std::isfinite(control.angularRateGainRatedTorquePerRadianPerSecond) ||
-        control.angularRateGainRatedTorquePerRadianPerSecond < 0.0 ||
+        control.angularRateFilterAlpha < 0.0 ||
+        control.angularRateFilterAlpha >= 1.0 ||
+        !std::isfinite(control.angleGainPercentAtMaximumAngle) ||
+        control.angleGainPercentAtMaximumAngle < 0.0 ||
+        !std::isfinite(control.angularRateGainPercentAtMaximumRate) ||
+        control.angularRateGainPercentAtMaximumRate < 0.0 ||
+        !std::isfinite(control.maximumBalanceAngularRateDegreesPerSecond) ||
+        control.maximumBalanceAngularRateDegreesPerSecond <= 0.0 ||
+        !std::isfinite(control.angleRelayBoostRatedTorqueFraction) ||
+        control.angleRelayBoostRatedTorqueFraction < 0.0 ||
+        control.angleRelayBoostRatedTorqueFraction >
+            control.maximumAbsoluteRatedTorqueFraction ||
+        control.angleRelayBoostDeadbandCounts < 0 ||
+        control.angleRelayBoostDeadbandCounts >=
+            static_cast<std::int64_t>(control.pendulumCountsPerRevolution / 4) ||
+        !std::isfinite(control.maximumBalanceAngleRadians) ||
+        control.maximumBalanceAngleRadians <= 0.0 ||
+        control.maximumBalanceAngleRadians >= std::numbers::pi / 2.0 ||
         !std::isfinite(control.cartPositionGainRatedTorquePerHalfTravel) ||
         control.cartPositionGainRatedTorquePerHalfTravel < 0.0 ||
         !std::isfinite(control.cartVelocityGainRatedTorquePerHalfTravelPerSecond) ||

@@ -77,16 +77,22 @@ void testDefaultConfig(const std::filesystem::path& path) {
     require(std::abs(config.balanceControl.analogTorqueZeroVoltage -
                      (-0.00135)) < 1e-15,
             "analog torque zero calibration mismatch");
-    require(std::abs(config.balanceControl.angleGainRatedTorquePerRadian -
-                     4.3) < 1e-15,
+    require(std::abs(config.balanceControl.angleGainPercentAtMaximumAngle -
+                     30.0) < 1e-15,
             "angle PD rated-torque proportional gain mismatch");
     require(std::abs(
-                config.balanceControl.angularRateGainRatedTorquePerRadianPerSecond -
-                0.15) < 1e-15,
+                config.balanceControl.angularRateGainPercentAtMaximumRate -
+                5.0) < 1e-15 &&
+                config.balanceControl.maximumBalanceAngularRateDegreesPerSecond == 57.3,
             "angle PD rated-torque derivative gain mismatch");
-    require(config.balanceControl.cartPositionGainRatedTorquePerHalfTravel == 0.02 &&
-                config.balanceControl.cartVelocityGainRatedTorquePerHalfTravelPerSecond == 0.01 &&
-                config.balanceControl.cartIntegralGainRatedTorquePerHalfTravelSecond == 0.002 &&
+    require(config.balanceControl.angleRelayBoostRatedTorqueFraction == 0.0 &&
+                config.balanceControl.angleRelayBoostDeadbandCounts == 12 &&
+                std::abs(config.balanceControl.maximumBalanceAngleRadians -
+                         0.08726646259971647) < 1e-15,
+            "angle relay boost settings mismatch");
+    require(config.balanceControl.cartPositionGainRatedTorquePerHalfTravel == 0.03 &&
+                config.balanceControl.cartVelocityGainRatedTorquePerHalfTravelPerSecond == 0.18 &&
+                config.balanceControl.cartIntegralGainRatedTorquePerHalfTravelSecond == 0.0 &&
                 config.balanceControl.maximumAbsoluteCartRatedTorqueFraction == 0.05,
             "cart-centering gains mismatch");
     require(config.balanceControl.maximumBalanceStartPositionFraction == 0.1 &&
@@ -116,7 +122,7 @@ void testPendulumStateEstimator() {
     using pendulum::control::PendulumStateEstimator;
 
     const auto start = std::chrono::steady_clock::time_point{};
-    PendulumStateEstimator estimator(8000, 1.0);
+    PendulumStateEstimator estimator(8000, 0.0);
     estimator.reset(100, 100, start);
 
     const auto quarterTurn = estimator.update(2100, start + 10ms);
@@ -135,6 +141,16 @@ void testPendulumStateEstimator() {
     require(std::abs(wrapped.pendulumAngularRateRadiansPerSecond -
                      20.0 * (2.0 * std::numbers::pi / 8000.0) / 0.01) < 1e-9,
             "pendulum angular-rate rollover handling is wrong");
+    require(std::abs(wrapped.pendulumAngularRateRawDegreesPerSecond - 90.0) < 1e-9 &&
+                std::abs(wrapped.pendulumAngularRateFilteredDegreesPerSecond - 90.0) < 1e-9,
+            "degree-based raw/filtered angular rate is wrong");
+
+    PendulumStateEstimator filteredEstimator(8000, 0.9);
+    filteredEstimator.reset(0, 0, start);
+    const auto filtered = filteredEstimator.update(20, start + 10ms);
+    require(std::abs(filtered.pendulumAngularRateRawDegreesPerSecond - 90.0) < 1e-9 &&
+                std::abs(filtered.pendulumAngularRateFilteredDegreesPerSecond - 9.0) < 1e-9,
+            "alpha=0.9 low-pass formula is wrong");
 
     require(PendulumStateEstimator::stableRepresentative(
                 {100, 101, 99, 100, 102}, 3) == 100,
@@ -166,38 +182,63 @@ void testLqrController() {
 
 void testAnglePdController() {
     pendulum::control::AnglePdController controller(
-        0.25 / 3.0, 0.02 / 3.0, 1.0);
+        25.0, 2.0, 1.0, 1.0, 1.0);
     pendulum::control::State state;
     state.pendulumAngleRadians = 0.1;
     state.pendulumAngularRateRadiansPerSecond = 1.0;
-    require(std::abs(controller.ratedTorqueFraction(state, 1) - 0.015) < 1e-12,
+    state.pendulumAngleDegrees = 0.1;
+    state.pendulumAngularRateFilteredDegreesPerSecond = 1.0;
+    require(std::abs(controller.ratedTorqueFraction(state, 1) - 0.045) < 1e-12,
             "angle PD rated-torque output is wrong");
-    require(std::abs(controller.ratedTorqueFraction(state, -1) + 0.015) < 1e-12,
+    const auto percentageOutput = controller.update(state, 1);
+    require(std::abs(percentageOutput.proportionalTermPercent - 2.5) < 1e-12 &&
+                std::abs(percentageOutput.derivativeTermPercent - 2.0) < 1e-12,
+            "angle PD percentage terms are wrong");
+    require(std::abs(controller.ratedTorqueFraction(state, -1) + 0.045) < 1e-12,
             "angle PD polarity reversal is wrong");
 
     state.pendulumAngleRadians = 1.0;
     state.pendulumAngularRateRadiansPerSecond = 0.0;
-    require(std::abs(controller.ratedTorqueFraction(state, 1) -
-                     (0.25 / 3.0)) < 1e-12,
+    state.pendulumAngleDegrees = 1.0;
+    state.pendulumAngularRateFilteredDegreesPerSecond = 0.0;
+    require(std::abs(controller.ratedTorqueFraction(state, 1) - 0.25) < 1e-12,
             "angle PD output below the 50% clamp is wrong");
     state.pendulumAngleRadians = 20.0;
+    state.pendulumAngleDegrees = 20.0;
     require(controller.ratedTorqueFraction(state, 1) == 1.0,
             "angle PD 100% rated-torque clamp is wrong");
 
     pendulum::control::AnglePdController cartController(
-        0.0, 0.0, 1.0, 0.1, 0.2, 0.3, 0.5);
+        0.0, 0.0, 1.0, 1.0, 1.0, 0.1, 0.2, 0.3, 0.5);
     pendulum::control::CartCenteringFeedback cart;
     cart.positionHalfTravel = 0.2;
     cart.velocityHalfTravelPerSecond = 0.1;
     cart.samplePeriodSeconds = 1.0;
     const auto first = cartController.update({}, 1, cart);
-    require(std::abs(first.cartRatedTorqueFraction + 0.1) < 1e-12,
+    require(std::abs(first.cartRatedTorqueFraction - 0.1) < 1e-12,
             "cart PID feedback output is wrong");
     cart.positionHalfTravel = 0.0;
     cart.velocityHalfTravelPerSecond = 0.0;
     const auto second = cartController.update({}, 1, cart);
-    require(std::abs(second.cartRatedTorqueFraction + 0.06) < 1e-12,
+    require(std::abs(second.cartRatedTorqueFraction - 0.06) < 1e-12,
             "cart integral feedback did not retain the centering bias");
+
+    pendulum::control::AnglePdController relayController(
+        0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.45, 0.01);
+    state.pendulumAngleRadians = -0.02;
+    auto relay = relayController.update(state, 1);
+    require(relay.angleRelayBoostRatedTorqueFraction == -0.45 &&
+                relay.totalRatedTorqueFraction == -0.45,
+            "relay boost below the target has the wrong direction");
+    state.pendulumAngleRadians = 0.02;
+    relay = relayController.update(state, 1);
+    require(relay.angleRelayBoostRatedTorqueFraction == 0.45 &&
+                relay.totalRatedTorqueFraction == 0.45,
+            "relay boost above the target did not reverse");
+    state.pendulumAngleRadians = 0.005;
+    relay = relayController.update(state, 1);
+    require(relay.angleRelayBoostRatedTorqueFraction == 0.0,
+            "relay boost remained active inside the deadband");
 }
 
 void testSafetyOrderAndFaultContainment() {
@@ -312,6 +353,11 @@ void testHomeCenterMath() {
             "simulated cart did not return to center");
     require(maximumCommandAfterFirstBoundary <= settings.escapeVoltage,
             "distance-critical homing reused the fast search voltage");
+
+    position = 7;
+    const auto returned = controller.returnToKnownCenter(0, 20, -1.0);
+    require(std::llabs(returned) <= 1,
+            "known-center return did not reuse the measured center");
 
     position = -6;
     voltage = 0.0;

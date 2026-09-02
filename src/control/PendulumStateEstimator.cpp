@@ -14,7 +14,7 @@ PendulumStateEstimator::PendulumStateEstimator(
                        static_cast<double>(countsPerRevolution)),
       angularRateFilterAlpha_(angularRateFilterAlpha) {
     if (countsPerRevolution <= 0 || !std::isfinite(angularRateFilterAlpha) ||
-        angularRateFilterAlpha <= 0.0 || angularRateFilterAlpha > 1.0) {
+        angularRateFilterAlpha < 0.0 || angularRateFilterAlpha >= 1.0) {
         throw std::invalid_argument("Invalid pendulum state-estimator settings");
     }
 }
@@ -28,6 +28,7 @@ void PendulumStateEstimator::reset(
                                        countsPerRevolution_)) *
                      radiansPerCount_;
     filteredAngularRate_ = 0.0;
+    rawAngularRate_ = 0.0;
     previousTime_ = time;
     initialized_ = true;
 }
@@ -51,12 +52,21 @@ State PendulumStateEstimator::update(
                 (angle - previousAngle_) / radiansPerCount_)),
             countsPerRevolution_)) *
         radiansPerCount_;
-    const double rawRate = wrappedAngleDelta / dt;
-    filteredAngularRate_ +=
-        angularRateFilterAlpha_ * (rawRate - filteredAngularRate_);
+    rawAngularRate_ = wrappedAngleDelta / dt;
+    filteredAngularRate_ =
+        angularRateFilterAlpha_ * filteredAngularRate_ +
+        (1.0 - angularRateFilterAlpha_) * rawAngularRate_;
     previousAngle_ = angle;
     previousTime_ = time;
-    return State{0.0, 0.0, angle, filteredAngularRate_};
+    State state;
+    state.pendulumAngleRadians = angle;
+    state.pendulumAngularRateRadiansPerSecond = filteredAngularRate_;
+    state.pendulumAngleDegrees = angle * 180.0 / std::numbers::pi;
+    state.pendulumAngularRateRawDegreesPerSecond =
+        rawAngularRate_ * 180.0 / std::numbers::pi;
+    state.pendulumAngularRateFilteredDegreesPerSecond =
+        filteredAngularRate_ * 180.0 / std::numbers::pi;
+    return state;
 }
 
 std::int64_t PendulumStateEstimator::wrappedCounts(

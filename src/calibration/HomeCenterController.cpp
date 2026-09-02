@@ -53,6 +53,16 @@ HomeCenterResult HomeCenterController::measureTravel() {
     return execute(false, false);
 }
 
+std::int64_t HomeCenterController::returnToKnownCenter(
+    std::int64_t target, std::int64_t travel, double aoToEncoderSign) {
+    if (travel <= 0 || (aoToEncoderSign != -1.0 && aoToEncoderSign != 1.0)) {
+        throw std::invalid_argument("Invalid known-center return geometry");
+    }
+    const auto finalPosition = moveToCenter(target, travel, aoToEncoderSign);
+    stopMotion_("known center return complete");
+    return finalPosition;
+}
+
 HomeCenterResult HomeCenterController::execute(bool returnToCenter,
                                                bool enforceMinimumTravel) {
     auto sample = readSample_();

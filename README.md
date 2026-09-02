@@ -48,7 +48,7 @@ Use `status`, `limits`, `encoder`, `log`, and `help` to inspect the hardware. `s
 AO0=0 V and enables the Servo immediately; it stays enabled until `servo off` or a stop event.
 
 At startup, the A-axis downward zero is captured only after a stable 1.5-second sample window. Home
-the cart in the current console process, then hold the pendulum upright and start:
+the cart in the current console process, move the pendulum near upright, and start:
 
 ```text
 home center
@@ -61,15 +61,64 @@ console session.
 The A-axis encoder uses a 10 us A/B minimum-pulse-width filter and is configured as 2000 PPR with
 X4 decoding: 8000 counts/revolution,
 0.045 degrees/count. The automatic startup capture (or `balance zero`) records the freely hanging
-position. `balance start` captures
-the current manually held upright count as the stabilization target; it does not assume that the
-mechanical upright count is exactly zero or persist it across process starts. The downward-to-
-upright difference should be near half a revolution (about 4000 counts) and is logged for
-inspection, but it does not block starting. The controller combines pendulum angle/rate with cart
+position. Each `balance start` captures the current encoder count as that trial's stabilization
+reference. The controller applies no fixed encoder target or artificial angle bias. It combines
+pendulum angle/rate error relative to the captured reference with cart
 position, velocity, and position integral feedback. Cart position is normalized so each physical
 limit is approximately one half-travel from the session center. Both physical limits still command
 AO0=0 V and Servo OFF, and the balance loop stops at the configured software travel envelope before
 reaching them.
+
+Outside the configured `angle_relay_boost_deadband_counts` around the captured reference, the controller adds
+a fixed signed angle relay boost. It reverses immediately after crossing the target, while the
+ordinary PD term damps the motion and the cart feedback keeps the carriage near session center.
+The boost and the combined command remain bounded by the configured rated-torque limits.
+
+## Offline reinforcement learning
+
+`tools/train_balance_policy.py` learns only from recorded `BalanceTelemetry` data. It identifies a
+local dynamics model and searches for a bounded linear policy whose deterministic reward favors an
+upright pendulum, a centered cart, low angular/cart speed, low actuator effort, and small command
+changes. Training never connects to hardware:
+
+```text
+python tools/train_balance_policy.py --output experiments/rl_training_latest/policy_candidate.json
+python -m unittest tests/test_rl_trainer.py -v
+```
+
+Generated candidates contain `"deployment_allowed": false`. They must not be copied into the live
+controller until the timing issue is corrected, an independent replay/simulation gate passes, and a
+short supervised hardware experiment is explicitly authorized.
+
+## Operator-supervised experiment loop
+
+After building the Release console, start the interactive slow-loop optimizer with:
+
+```text
+python tools/run_balance_experiments.py --duration 15 --polarity +
+```
+
+The manager launches the deterministic manual console, loads
+`experiments/balance_optimizer/known_good.json`, asks for Enter before the one-time `home center`,
+then asks for Enter before every balance trial. A trial ends on operator Enter, pendulum fall,
+timeout, cart envelope, controller abort, or hardware safety stop. AO/Servo shutdown remains owned
+by the C++ safety layer. Every run gets an immutable directory containing its parameters, telemetry,
+and score. After each safely terminated trial, the manager issues `home return`: it reuses the
+left/right boundaries and center measured once at session startup, moves directly to that known
+center with the configured staged speed profile, then stops with AO0=0 and Servo OFF. It does not
+probe both limits again.
+
+The slow-loop learner uses bounded CEM episodic policy search. The complete
+`Kp/Kd/Kx/Kv/Ki` vector is the policy: each trial samples a joint candidate from a persistent
+distribution, stores the resulting reward and termination in replay, and updates the distribution
+toward the highest-reward recent episodes. Exploration variance adapts as evidence accumulates; it
+does not alternate fixed plus/minus steps. Up to 100 existing trials bootstrap the replay buffer.
+All gains remain inside fixed bounds and the deterministic C++ safety limits remain authoritative.
+A candidate must improve the score by at least 2% and pass three supervised trials before replacing
+`known_good`. Every `balance start` captures the current pendulum encoder count as that trial's
+balance reference; no fixed count or artificial angle bias is applied. Use `--dry-run` to inspect
+the next joint candidate without launching hardware.
+
 
 The first-stage controller commands the Yaskawa SGD7S-180A00A002 in analog torque mode. With
 `Pn400=30`, 3.0 V represents 100% rated torque. The controller computes a signed fraction of rated

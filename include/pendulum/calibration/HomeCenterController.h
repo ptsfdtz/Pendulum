@@ -46,6 +46,8 @@ public:
 
     HomeCenterResult run();
     HomeCenterResult measureTravel();
+    std::int64_t returnToKnownCenter(std::int64_t target, std::int64_t travel,
+                                     double aoToEncoderSign);
     static std::int64_t midpoint(std::int64_t first, std::int64_t second);
 
 private:

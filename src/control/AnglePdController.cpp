@@ -7,23 +7,36 @@
 namespace pendulum::control {
 
 AnglePdController::AnglePdController(
-    double angleGainRatedTorquePerRadian,
-    double angularRateGainRatedTorquePerRadianPerSecond,
+    double angleGainPercentAtMaximumAngle,
+    double angularRateGainPercentAtMaximumRate,
+    double maximumBalanceAngleDegrees,
+    double maximumBalanceAngularRateDegreesPerSecond,
     double maximumAbsoluteRatedTorqueFraction,
     double cartPositionGainRatedTorquePerHalfTravel,
     double cartVelocityGainRatedTorquePerHalfTravelPerSecond,
     double cartIntegralGainRatedTorquePerHalfTravelSecond,
-    double maximumAbsoluteCartRatedTorqueFraction)
-    : angleGain_(angleGainRatedTorquePerRadian),
-      angularRateGain_(angularRateGainRatedTorquePerRadianPerSecond),
+    double maximumAbsoluteCartRatedTorqueFraction,
+    double angleRelayBoostRatedTorqueFraction,
+    double angleRelayBoostDeadbandRadians)
+    : angleGain_(angleGainPercentAtMaximumAngle),
+      angularRateGain_(angularRateGainPercentAtMaximumRate),
+      maximumBalanceAngleDegrees_(maximumBalanceAngleDegrees),
+      maximumBalanceAngularRateDegreesPerSecond_(
+          maximumBalanceAngularRateDegreesPerSecond),
       maximumAbsoluteRatedTorqueFraction_(maximumAbsoluteRatedTorqueFraction),
       cartPositionGain_(cartPositionGainRatedTorquePerHalfTravel),
       cartVelocityGain_(cartVelocityGainRatedTorquePerHalfTravelPerSecond),
       cartIntegralGain_(cartIntegralGainRatedTorquePerHalfTravelSecond),
       maximumAbsoluteCartRatedTorqueFraction_(
-          maximumAbsoluteCartRatedTorqueFraction) {
+          maximumAbsoluteCartRatedTorqueFraction),
+      angleRelayBoostRatedTorqueFraction_(angleRelayBoostRatedTorqueFraction),
+      angleRelayBoostDeadbandRadians_(angleRelayBoostDeadbandRadians) {
     if (!std::isfinite(angleGain_) || angleGain_ < 0.0 ||
         !std::isfinite(angularRateGain_) || angularRateGain_ < 0.0 ||
+        !std::isfinite(maximumBalanceAngleDegrees_) ||
+        maximumBalanceAngleDegrees_ <= 0.0 ||
+        !std::isfinite(maximumBalanceAngularRateDegreesPerSecond_) ||
+        maximumBalanceAngularRateDegreesPerSecond_ <= 0.0 ||
         !std::isfinite(maximumAbsoluteRatedTorqueFraction_) ||
         maximumAbsoluteRatedTorqueFraction_ <= 0.0 ||
         maximumAbsoluteRatedTorqueFraction_ > 1.0 ||
@@ -33,7 +46,12 @@ AnglePdController::AnglePdController(
         !std::isfinite(maximumAbsoluteCartRatedTorqueFraction_) ||
         maximumAbsoluteCartRatedTorqueFraction_ < 0.0 ||
         maximumAbsoluteCartRatedTorqueFraction_ >
-            maximumAbsoluteRatedTorqueFraction_) {
+            maximumAbsoluteRatedTorqueFraction_ ||
+        !std::isfinite(angleRelayBoostRatedTorqueFraction_) ||
+        angleRelayBoostRatedTorqueFraction_ < 0.0 ||
+        angleRelayBoostRatedTorqueFraction_ > maximumAbsoluteRatedTorqueFraction_ ||
+        !std::isfinite(angleRelayBoostDeadbandRadians_) ||
+        angleRelayBoostDeadbandRadians_ < 0.0) {
         throw std::invalid_argument("Invalid angle PD controller settings");
     }
 }
@@ -46,6 +64,9 @@ AnglePdOutput AnglePdController::update(
     }
     if (!std::isfinite(state.pendulumAngleRadians) ||
         !std::isfinite(state.pendulumAngularRateRadiansPerSecond) ||
+        !std::isfinite(state.pendulumAngleDegrees) ||
+        !std::isfinite(state.pendulumAngularRateRawDegreesPerSecond) ||
+        !std::isfinite(state.pendulumAngularRateFilteredDegreesPerSecond) ||
         !std::isfinite(cartFeedback.positionHalfTravel) ||
         !std::isfinite(cartFeedback.velocityHalfTravelPerSecond) ||
         !std::isfinite(cartFeedback.samplePeriodSeconds) ||
@@ -65,18 +86,29 @@ AnglePdOutput AnglePdController::update(
     }
 
     AnglePdOutput output;
+    output.proportionalTermPercent = static_cast<double>(polarity) * angleGain_ *
+        state.pendulumAngleDegrees / maximumBalanceAngleDegrees_;
+    output.derivativeTermPercent = static_cast<double>(polarity) * angularRateGain_ *
+        state.pendulumAngularRateFilteredDegreesPerSecond /
+        maximumBalanceAngularRateDegreesPerSecond_;
     output.angleRatedTorqueFraction =
-        static_cast<double>(polarity) *
-        (angleGain_ * state.pendulumAngleRadians +
-         angularRateGain_ * state.pendulumAngularRateRadiansPerSecond);
+        (output.proportionalTermPercent + output.derivativeTermPercent) / 100.0;
+    if (std::abs(state.pendulumAngleRadians) > angleRelayBoostDeadbandRadians_) {
+        output.angleRelayBoostRatedTorqueFraction =
+            static_cast<double>(polarity) *
+            std::copysign(angleRelayBoostRatedTorqueFraction_,
+                          state.pendulumAngleRadians);
+    }
     output.cartRatedTorqueFraction = std::clamp(
-        -(cartPositionGain_ * cartFeedback.positionHalfTravel +
-          cartVelocityGain_ * cartFeedback.velocityHalfTravelPerSecond +
-          cartIntegralGain_ * cartPositionIntegral_),
+        cartPositionGain_ * cartFeedback.positionHalfTravel +
+            cartVelocityGain_ * cartFeedback.velocityHalfTravelPerSecond +
+            cartIntegralGain_ * cartPositionIntegral_,
         -maximumAbsoluteCartRatedTorqueFraction_,
         maximumAbsoluteCartRatedTorqueFraction_);
     output.totalRatedTorqueFraction = std::clamp(
-        output.angleRatedTorqueFraction + output.cartRatedTorqueFraction,
+        output.angleRatedTorqueFraction +
+            output.angleRelayBoostRatedTorqueFraction +
+            output.cartRatedTorqueFraction,
         -maximumAbsoluteRatedTorqueFraction_,
         maximumAbsoluteRatedTorqueFraction_);
     return output;

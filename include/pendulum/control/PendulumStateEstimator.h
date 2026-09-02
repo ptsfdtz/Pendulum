@@ -11,6 +11,9 @@ struct State {
     double cartVelocityMetersPerSecond{0.0};
     double pendulumAngleRadians{0.0};
     double pendulumAngularRateRadiansPerSecond{0.0};
+    double pendulumAngleDegrees{0.0};
+    double pendulumAngularRateRawDegreesPerSecond{0.0};
+    double pendulumAngularRateFilteredDegreesPerSecond{0.0};
 };
 
 class PendulumStateEstimator final {
@@ -35,6 +38,7 @@ private:
     std::int64_t uprightCount_{0};
     double previousAngle_{0.0};
     double filteredAngularRate_{0.0};
+    double rawAngularRate_{0.0};
     std::chrono::steady_clock::time_point previousTime_{};
     bool initialized_{false};
 };

@@ -120,8 +120,12 @@ struct BalanceControlConfig {
     double downwardZeroSettleTimeoutSeconds{20.0};
     std::int64_t downwardZeroMaximumSpanCounts{8};
     double angularRateFilterAlpha{0.15};
-    double angleGainRatedTorquePerRadian{2.0};
-    double angularRateGainRatedTorquePerRadianPerSecond{0.1};
+    double angleGainPercentAtMaximumAngle{10.0};
+    double angularRateGainPercentAtMaximumRate{20.0};
+    double maximumBalanceAngularRateDegreesPerSecond{57.3};
+    double angleRelayBoostRatedTorqueFraction{0.0};
+    std::int64_t angleRelayBoostDeadbandCounts{12};
+    double maximumBalanceAngleRadians{0.25};
     double cartPositionGainRatedTorquePerHalfTravel{0.02};
     double cartVelocityGainRatedTorquePerHalfTravelPerSecond{0.01};
     double cartIntegralGainRatedTorquePerHalfTravelSecond{0.002};
