@@ -1,0 +1,52 @@
+{
+  "objective": "Port the complete LQR_lp2.slx double-inverted-pendulum controller into the current C++ project, preserving model parameters and behavior while exposing only manual-upright balance start operation.",
+  "reference": {
+    "requested_path": "E:\\直线倒立摆库\\demo\\LQR\\_lp2.slx",
+    "resolved_model": "E:\\直线倒立摆库\\demo\\LQR_lp2.slx",
+    "project_copy": "reference/LQR_lp2/LQR_lp2.slx",
+    "sha256": "A1ED10DD4999DF36895BB2534E779F0ED9CA82DDD7776522F038F4F1AC2821F4",
+    "parameter_script": "reference/LQR_lp2/P_2.m",
+    "model_version": "4.43",
+    "matlab_release": "R2021a"
+  },
+  "acceptance_tests": {
+    "reference_copy_hash_matches": "passed on 2026-09-03",
+    "model_update": "passed in MATLAB R2021a on 2026-09-03",
+    "model_codegen": "passed with sldrt.tlc on 2026-09-03; temporary generated files removed after inspection",
+    "controller_unit_tests": "ctest release passed 1/1 on 2026-09-03",
+    "release_build": "passed on 2026-09-03",
+    "device_enumeration": "passed; Dev1 PCI-6602 and PCI-1723,BID#15 detected",
+    "encoder_input_probe": "passed; Dev1/ctr0, Dev1/ctr1, and Dev1/ctr2 input tasks created and read; no output tasks created",
+    "hardware_motion": "not authorized and not run"
+  },
+  "known": [
+    "Operator manually raises both pendulum links before issuing balance start.",
+    "balance start captures current first-link, second-link, and cart counts as the controller references.",
+    "First-link encoder is X4, 2500 PPR, 10000 counts per revolution on Dev1/ctr1.",
+    "Second-link encoder is X4, 1000 PPR, 4000 counts per revolution on Dev1/ctr2.",
+    "Second-link A/B use PCI-6602 CTR2 SOURCE pin 34 and CTR2 AUX pin 66 through default routing.",
+    "Second-link Z is optional on CTR2 GATE pin 67 and is not used.",
+    "The controller path executes every 0.005 seconds.",
+    "All encoder digital filters are disabled at 0 us, matching the source model."
+  ],
+  "implemented": [
+    "Three simultaneous PCI-6602 encoder input tasks for cart, first link, and second link",
+    "Source-model angle composition and wrap-to-pi behavior",
+    "Six-state LQR with model literals 150.31, 23.63, -93.74, -3.25, -10, and -11.64",
+    "Acceleration saturation at +/-30",
+    "ACC2VOL Ts=0.005, velocity saturation +/-0.6, P=0.18, I=27, and voltage saturation +/-2",
+    "Source-model velocity-integrator reset when either absolute link angle is >= pi/18",
+    "Manual-upright-only balance start interface",
+    "CSV telemetry for both link angles, rates, encoder counts, controller state, and AO command"
+  ],
+  "preserved": [
+    "Physical limit debounce and immediate output shutdown",
+    "AO0=0 V before Servo OFF shutdown ordering",
+    "Process-fault and Ctrl+C shutdown",
+    "Manual utilities, optional homing, and telemetry logging"
+  ],
+  "best_known_artifact": "out/build/vs2022-x64/Release/pendulum_manual_console.exe",
+  "unresolved_blockers": [
+    "Physical balance behavior cannot be called hardware-verified without an operator-authorized supervised motion run."
+  ]
+}

@@ -1,93 +1,92 @@
 # PendulumLab
 
-Windows C++ controller for a single-stage linear inverted pendulum using:
+Windows C++ controller for a double linear inverted pendulum using:
 
-- NI PCI-6602 for the motor encoder, pendulum encoder, limits, and Servo enable
+- NI PCI-6602 for the cart encoder, both pendulum encoders, travel limits, and Servo enable
 - Advantech PCI-1723 AO0 for the Yaskawa SGD7S velocity command
 
-## Balance controller
+## Double-pendulum balance controller
 
-The live balance path is the complete controller from
-`E:\直线倒立摆库\demo\Copy_of_LQR_lp1_1.slx` (model version 4.37). The previous
-PD/LQR controllers and offline gain-learning tools have been removed.
-
-The implementation preserves the reference model's signs, constants,
-unit-delay initial conditions, saturation behavior, and update ordering:
+The live balance path is ported from the archived
+`reference/LQR_lp2/LQR_lp2.slx` model version 4.43. The copy has the same
+SHA-256 hash as `E:\直线倒立摆库\demo\LQR_lp2.slx`:
 
 ```text
-theta = wrap(-(pendulum_count - upright_count) * 2*pi/8000)
-x     = -(motor_count - center_count) * 0.163/8000
-
-theta_dot = (theta - theta_previous) / 0.01
-x_dot     = (x - x_previous) / 0.01
-
-lqr_acc = clamp(
-    -58.6*theta
-    -10.69*theta_dot
-    +10*x
-    +12.23*x_dot,
-    -10, +10)
+A1ED10DD4999DF36895BB2534E779F0ED9CA82DDD7776522F038F4F1AC2821F4
 ```
 
-The reference `ACC2VOL` block is also reproduced:
+The model's exact numerical path is preserved:
 
-- control update: 0.01 s
-- integrator multiplier `Ts`: 0.005 s, exactly as stored in the model
-- velocity reference limit: +/-0.6 m/s
-- velocity PI: P=0.18, I=54
-- AO0 limit: +/-1 V
-- AO0 zero command: 0 V
+```text
+theta1 = wrap(-first_pendulum_delta * 2*pi/10000)
+theta2 = wrap(-second_pendulum_delta * 2*pi/4000 + theta1)
+x      = -cart_delta * 0.163/8000
 
-The first `balance auto` after program startup runs a fresh two-limit center
-operation and remembers that center for the current process. Later
-`balance auto` commands return directly to the remembered center without
-probing both limits again. Each automatic run confirms the pendulum downward
-zero before enabling the exact reference `Swing_up` branch. The model selects `Swing_up` while
-`abs(theta) >= pi/6` and LQR inside that region; it returns to `Swing_up`
-automatically if the pendulum leaves the LQR region. Copied swing-up constants:
-`m=0.134`, `g=9.8`, `l=0.223`, `J=0.0089`, `Gain1=5`, `Gain2=6`, and
-`PositionLimit=0.25`.
+theta1_dot = (theta1 - theta1_previous) / 0.005
+theta2_dot = (theta2 - theta2_previous) / 0.005
+x_dot      = (x - x_previous) / 0.005
 
-`balance start` remains the manual-upright mode. Hold the pendulum within
-+/-30 degrees of upright before starting it. This mode stops when the pendulum
-leaves the LQR region.
+acc = clamp(
+     150.31*theta2 + 23.63*theta2_dot
+    - 93.74*theta1 -  3.25*theta1_dot
+    - 10*x          - 11.64*x_dot,
+    -30, +30)
+```
 
-## Safety retained
+The copied `ACC2VOL` block uses:
 
-- active-HIGH left and right physical limits with debounce
-- AO0=0 V before Servo OFF on a limit, monitor fault, exception, Ctrl+C, or exit
-- fresh two-limit `home center` on the first automatic run; later automatic
-  runs return to the remembered in-process center
-- balance start restricted to the configured center window
-- automatic swing-up software travel limit at 85% of calibrated half-travel;
-  outward commands are blocked without ending the run, and inward commands
-  remain available so swing-up can recover and continue
-- manual-upright balance still stops if it reaches the software travel limit
-- manual Servo, homing, encoder inspection, calibration, and CSV logging remain
+- control/update period: 0.005 s (200 Hz)
+- integrator multiplier `Ts`: 0.005 s
+- velocity reference limit: ±0.6 m/s
+- velocity PI: P=0.18, I=27
+- AO0 limit: ±2 V
+- AO0 initial/final value: 0 V
+- velocity-reference integrator reset when either absolute link angle reaches 10°
 
-## Manual console
+`balance start` is intentionally the only balance-start mode. It captures the
+current CTR1, CTR2, and cart counts as the upright/cart references, then starts
+the exact LQR+ACC2VOL path. There is no automatic homing, downward-zero step, or
+swing-up in this command.
+
+## Wiring
+
+| Function | PCI-6602 resource | Pin |
+| --- | --- | ---: |
+| Cart encoder A | CTR0 SOURCE | 2 |
+| Cart encoder B | CTR0 AUX | 40 |
+| First-pendulum encoder A | CTR1 SOURCE | 7 |
+| First-pendulum encoder B | CTR1 AUX | 6 |
+| Second-pendulum encoder A (black) | CTR2 SOURCE | 34 |
+| Second-pendulum encoder B (white) | CTR2 AUX | 66 |
+| Second-pendulum encoder Z (orange, optional) | CTR2 GATE | 67 |
+| Second-pendulum encoder 0 V (blue) | D GND | 33 or 68 |
+| Second-pendulum encoder +5 V (brown) | +5 V | 1 |
+| Left limit | `port0/line0` | 10 |
+| Right limit | `port0/line2` | 45 |
+| Servo ON | `port0/line3` | 12 |
+| Servo ON ground | D GND | 11 |
+
+The second-pendulum encoder is configured for X4 decoding: 1000 PPR and 4000
+effective counts/rev. CTR2's default A/B routing is pins 34/66. The optional Z
+wire is documented but not used by the controller. All three encoder digital
+minimum-pulse-width filters are disabled (`0 us`), matching the source model.
+
+## Run
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start_manual_console.ps1
 ```
 
-Automatic sequence:
+Then:
 
 ```text
-balance auto
+1. Place the cart at a safe position and manually hold both links upright.
+2. Enter: balance start
+3. To stop, enter: balance stop
 ```
 
-The first command performs `home center`; subsequent commands reuse the
-remembered center. Each run confirms the downward zero, starts reference
-swing-up, and switches to LQR automatically.
-
-Manual-upright sequence:
-
-```text
-home center
-# Manually hold the pendulum near upright
-balance start
-```
+The physical left/right limits, AO0=0 V before Servo OFF shutdown ordering,
+fault handling, Ctrl+C handling, and CSV telemetry remain active.
 
 Useful commands:
 
@@ -95,21 +94,12 @@ Useful commands:
 status
 limits
 encoder
-servo on
-servo off
-home measure
-home center
-home return
-balance zero
-balance auto
 balance start
 balance stop
 balance status
 balance gains
 quit
 ```
-
-Reference-model gains are locked and cannot be changed at runtime.
 
 ## Build and test
 
@@ -119,11 +109,11 @@ Reference-model gains are locked and cannot be changed at runtime.
 & 'C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe' --preset release --output-on-failure
 ```
 
-## Read-only hardware checks
+Read-only device enumeration:
 
 ```powershell
 & '.\out\build\vs2022-x64\Release\pendulum_self_test.exe' --config '.\config\config.json' --enumerate-only
-& '.\out\build\vs2022-x64\Release\pendulum_self_test.exe' --config '.\config\config.json' --input-probe
+& '.\out\build\vs2022-x64\Release\pendulum_self_test.exe' --config '.\config\config.json' --encoder-probe
 ```
 
-These checks do not enable Servo or command motion.
+No unattended hardware-motion test is performed.

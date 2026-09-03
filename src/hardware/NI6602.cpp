@@ -63,6 +63,7 @@ private:
 struct NI6602::Impl {
     Task motorEncoderTask;
     Task pendulumEncoderTask;
+    Task secondPendulumEncoderTask;
     Task leftLimitTask;
     Task rightLimitTask;
     Task servoTask;
@@ -267,6 +268,87 @@ std::uint32_t NI6602::readPendulumEncoderRaw() {
 
 bool NI6602::pendulumEncoderConfigured() const noexcept {
     return impl_ && impl_->pendulumEncoderTask.valid();
+}
+
+void NI6602::configureSecondPendulumEncoderRaw(
+    const std::string& counter, const std::string& phaseATerminal,
+    const std::string& phaseBTerminal, double filterMinPulseWidthSeconds) {
+    if (counter.empty() || counter == "UNCONFIRMED" ||
+        phaseATerminal.empty() || phaseATerminal == "UNCONFIRMED" ||
+        phaseBTerminal.empty() || phaseBTerminal == "UNCONFIRMED" ||
+        !std::isfinite(filterMinPulseWidthSeconds) ||
+        filterMinPulseWidthSeconds < 0.0) {
+        throw std::invalid_argument(
+            "Invalid or unconfirmed second-pendulum encoder configuration");
+    }
+    const bool useDefaultRouting =
+        phaseATerminal == "DEFAULT" && phaseBTerminal == "DEFAULT";
+    const bool useExplicitRouting =
+        phaseATerminal != "DEFAULT" && phaseBTerminal != "DEFAULT" &&
+        phaseATerminal != phaseBTerminal;
+    if (!useDefaultRouting && !useExplicitRouting) {
+        throw std::invalid_argument(
+            "Second-pendulum encoder A/B routing must both be DEFAULT or distinct terminals");
+    }
+
+    impl_->secondPendulumEncoderTask.clear();
+    checkDaq(DAQmxCreateTask("PendulumLabSecondPendulumEncoder",
+                             impl_->secondPendulumEncoderTask.address()),
+             "DAQmxCreateTask(second-pendulum encoder)");
+    try {
+        checkDaq(DAQmxCreateCIAngEncoderChan(
+                     impl_->secondPendulumEncoderTask.get(), counter.c_str(),
+                     "", DAQmx_Val_X4, false, 0.0, DAQmx_Val_AHighBHigh,
+                     DAQmx_Val_Ticks, 1, 0.0, nullptr),
+                 "DAQmxCreateCIAngEncoderChan(second-pendulum encoder)");
+        if (!useDefaultRouting) {
+            checkDaq(DAQmxSetCIEncoderAInputTerm(
+                         impl_->secondPendulumEncoderTask.get(), "",
+                         phaseATerminal.c_str()),
+                     "DAQmxSetCIEncoderAInputTerm(second-pendulum encoder)");
+            checkDaq(DAQmxSetCIEncoderBInputTerm(
+                         impl_->secondPendulumEncoderTask.get(), "",
+                         phaseBTerminal.c_str()),
+                     "DAQmxSetCIEncoderBInputTerm(second-pendulum encoder)");
+        }
+        if (filterMinPulseWidthSeconds > 0.0) {
+            checkDaq(DAQmxSetCIEncoderAInputDigFltrMinPulseWidth(
+                         impl_->secondPendulumEncoderTask.get(), "",
+                         filterMinPulseWidthSeconds),
+                     "DAQmxSetCIEncoderAInputDigFltrMinPulseWidth(second-pendulum encoder)");
+            checkDaq(DAQmxSetCIEncoderBInputDigFltrMinPulseWidth(
+                         impl_->secondPendulumEncoderTask.get(), "",
+                         filterMinPulseWidthSeconds),
+                     "DAQmxSetCIEncoderBInputDigFltrMinPulseWidth(second-pendulum encoder)");
+            checkDaq(DAQmxSetCIEncoderAInputDigFltrEnable(
+                         impl_->secondPendulumEncoderTask.get(), "", true),
+                     "DAQmxSetCIEncoderAInputDigFltrEnable(second-pendulum encoder)");
+            checkDaq(DAQmxSetCIEncoderBInputDigFltrEnable(
+                         impl_->secondPendulumEncoderTask.get(), "", true),
+                     "DAQmxSetCIEncoderBInputDigFltrEnable(second-pendulum encoder)");
+        }
+        checkDaq(DAQmxStartTask(impl_->secondPendulumEncoderTask.get()),
+                 "DAQmxStartTask(second-pendulum encoder)");
+    } catch (...) {
+        impl_->secondPendulumEncoderTask.clear();
+        throw;
+    }
+}
+
+std::uint32_t NI6602::readSecondPendulumEncoderRaw() {
+    if (!impl_->secondPendulumEncoderTask.valid()) {
+        throw std::logic_error(
+            "Second-pendulum encoder task has not been configured");
+    }
+    uInt32 value = 0;
+    checkDaq(DAQmxReadCounterScalarU32(
+                 impl_->secondPendulumEncoderTask.get(), 1.0, &value, nullptr),
+             "DAQmxReadCounterScalarU32(second-pendulum encoder)");
+    return value;
+}
+
+bool NI6602::secondPendulumEncoderConfigured() const noexcept {
+    return impl_ && impl_->secondPendulumEncoderTask.valid();
 }
 
 void NI6602::configureLimitInputs(const std::string& leftLine,

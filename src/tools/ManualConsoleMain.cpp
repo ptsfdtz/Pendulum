@@ -125,7 +125,6 @@ public:
         initializeHardware();
         monitor_ = std::jthread([this](std::stop_token stopToken) { monitor(stopToken); });
         waitForFirstSample();
-        static_cast<void>(captureStablePendulumZero("startup"));
 
         record("Console ready");
         if (!timerResolution.active()) {
@@ -169,7 +168,8 @@ public:
 
 private:
     struct PendulumSample {
-        std::int64_t positionCounts{0};
+        std::int64_t firstPositionCounts{0};
+        std::int64_t secondPositionCounts{0};
         std::int64_t motorPositionCounts{0};
         std::chrono::steady_clock::time_point time{};
         std::uint64_t sequence{0};
@@ -368,13 +368,9 @@ private:
             if (faultLatched_.load()) {
                 motion = "FAULT / OUTPUT DISABLED";
             } else if (balanceRunning_.load()) {
-                if (balanceSoftwareLimitActive_.load()) {
-                    motion = "AUTO / SOFT-LIMIT RECOVERY";
-                } else {
-                    motion = balanceSwingUpActive_.load()
-                        ? "AUTO / SWING-UP"
-                        : "BALANCING / LQR";
-                }
+                motion = balanceAngleStopActive_.load()
+                    ? "BALANCING / ANGLE STOP ACTIVE"
+                    : "BALANCING / LQR_LP2";
             } else if (homingRunning_.load()) {
                 std::scoped_lock lock(homingStateMutex_);
                 motion = "HOMING / " + homingState_;
@@ -408,22 +404,27 @@ private:
                      << "    rate " << std::showpos << std::fixed << std::setprecision(1)
                      << std::setw(12) << pendulumSpeedCountsPerSecond_.load() << " counts/s";
             screen << row(pendulum.str(), width) << '\n';
+            std::ostringstream secondPendulum;
+            secondPendulum << "PENDULUM2 position " << std::setw(12)
+                            << secondPendulumPositionCounts_.load()
+                            << "    rate " << std::showpos << std::fixed
+                            << std::setprecision(1) << std::setw(12)
+                            << secondPendulumSpeedCountsPerSecond_.load()
+                            << " counts/s";
+            screen << row(secondPendulum.str(), width) << '\n';
             screen << border("BALANCE CONTROL / LIVE TERMS", width) << '\n';
             std::ostringstream balance;
             balance << "STATE     "
                     << (balanceRunning_.load() ? "RUNNING" : "STOPPED")
                     << "    run " << balanceRunId_.load()
-                    << "    down-zero "
-                    << (pendulumZeroCaptured_.load() ? "CAPTURED" : "NOT SET")
-                    << "    target " << pendulumUprightCount_.load()
-                    << "    angle " << std::showpos << std::fixed
+                    << "    theta1 " << std::showpos << std::fixed
                     << std::setprecision(3) << balanceAngleDegrees_.load()
-                    << " deg    rate " << balanceAngularRateDegrees_.load()
-                    << " deg/s    fixed-sign reference model";
+                    << " deg    theta2 " << balanceSecondAngleDegrees_.load()
+                    << " deg    exact LQR_lp2";
             screen << "\x1b[1;37m" << row(balance.str(), width)
                    << "\x1b[0m\n";
             std::ostringstream angleTerms;
-            angleTerms << (balanceSwingUpActive_.load() ? "SWING-UP  " : "LQR       ")
+            angleTerms << (balanceAngleStopActive_.load() ? "ANGLE STOP " : "LQR        ")
                        << "acc " << std::showpos << std::fixed
                        << std::setprecision(4) << balanceReferenceAcceleration_.load()
                        << " m/s^2    vref " << balanceReferenceVelocity_.load()
@@ -442,7 +443,7 @@ private:
                           << std::setprecision(5) << balanceProportionalVoltage_.load()
                           << " V    I " << balancePiIntegralVoltage_.load()
                           << " V    AO0 " << voltage << " V";
-            const bool nearVoltageLimit = std::abs(voltage) >= 0.8;
+            const bool nearVoltageLimit = std::abs(voltage) >= 1.6;
             screen << (nearVoltageLimit ? "\x1b[1;31m" : "\x1b[1;32m")
                    << row(combinedTerms.str(), width) << "\x1b[0m\n";
 
@@ -476,7 +477,7 @@ private:
                 screen << row("status  limits  encoder  log  help  quit", width) << '\n';
                 screen << row("servo on|off    voltage <V> [duration_ms]", width) << '\n';
                 screen << row("home measure|center    calibrate zero", width) << '\n';
-                screen << row("balance auto    balance zero (recapture)    balance start", width) << '\n';
+                screen << row("Manually raise both links, then: balance start", width) << '\n';
                 screen << row("balance stop|status    balance gains", width) << '\n';
                 screen << row("balance gains (locked Simulink constants)", width) << '\n';
                 screen << row("Up/Down command history    Backspace edit    Enter run", width)
@@ -492,7 +493,7 @@ private:
             }
             screen << border("COMMAND", width) << '\n';
             if (!showHelp) {
-                screen << row("balance auto|start    balance zero (recapture)    balance stop|status", width)
+                screen << row("balance start    balance stop|status", width)
                        << '\n';
                 screen << row("balance gains    show locked Simulink parameters", width)
                        << '\n';
@@ -554,7 +555,13 @@ private:
                                         config_.ni6602.pendulumEncoderATerminal,
                                         config_.ni6602.pendulumEncoderBTerminal,
                                         config_.ni6602.pendulumEncoderFilterMinPulseWidthMicroseconds *
-                                            1e-6);
+                                             1e-6);
+        ni_.configureSecondPendulumEncoderRaw(
+            config_.ni6602.secondPendulumCounter,
+            config_.ni6602.secondPendulumEncoderATerminal,
+            config_.ni6602.secondPendulumEncoderBTerminal,
+            config_.ni6602.secondPendulumEncoderFilterMinPulseWidthMicroseconds *
+                1e-6);
         record("Hardware initialized at AO0=0 V and Servo OFF");
     }
 
@@ -575,8 +582,10 @@ private:
         std::uint32_t samplesSeen = 0;
         std::uint32_t previousMotor = 0;
         std::uint32_t previousPendulum = 0;
+        std::uint32_t previousSecondPendulum = 0;
         std::int64_t motorPosition = 0;
         std::int64_t pendulumPosition = 0;
+        std::int64_t secondPendulumPosition = 0;
         auto previousTime = std::chrono::steady_clock::now();
         bool havePreviousEncoderSample = false;
         try {
@@ -584,11 +593,14 @@ private:
                 const auto limits = ni_.readLimitInputs();
                 const auto motorEncoder = ni_.readMotorEncoderRaw();
                 const auto pendulumEncoder = ni_.readPendulumEncoderRaw();
+                const auto secondPendulumEncoder =
+                    ni_.readSecondPendulumEncoderRaw();
                 const auto sampleTime = std::chrono::steady_clock::now();
                 leftRawHigh_.store(limits.leftRawHigh);
                 rightRawHigh_.store(limits.rightRawHigh);
                 encoderRaw_.store(motorEncoder);
                 pendulumEncoderRaw_.store(pendulumEncoder);
+                secondPendulumEncoderRaw_.store(secondPendulumEncoder);
                 if (havePreviousEncoderSample) {
                     const double elapsed =
                         std::chrono::duration<double>(sampleTime - previousTime).count();
@@ -604,6 +616,13 @@ private:
                         pendulumSpeedCountsPerSecond_.store(
                             0.8 * pendulumSpeedCountsPerSecond_.load() +
                             0.2 * pendulumInstant);
+                        const double secondPendulumInstant = static_cast<double>(
+                            pendulum::calibration::MotorEncoderCalibration::deltaWithRollover(
+                                previousSecondPendulum,
+                                secondPendulumEncoder)) / elapsed;
+                        secondPendulumSpeedCountsPerSecond_.store(
+                            0.8 * secondPendulumSpeedCountsPerSecond_.load() +
+                            0.2 * secondPendulumInstant);
                     }
                     motorPosition +=
                         pendulum::calibration::MotorEncoderCalibration::deltaWithRollover(
@@ -611,6 +630,9 @@ private:
                     pendulumPosition +=
                         pendulum::calibration::MotorEncoderCalibration::deltaWithRollover(
                             previousPendulum, pendulumEncoder);
+                    secondPendulumPosition +=
+                        pendulum::calibration::MotorEncoderCalibration::deltaWithRollover(
+                            previousSecondPendulum, secondPendulumEncoder);
                 } else {
                     motorPosition =
                         pendulum::calibration::MotorEncoderCalibration::deltaWithRollover(
@@ -618,11 +640,16 @@ private:
                     pendulumPosition =
                         pendulum::calibration::MotorEncoderCalibration::deltaWithRollover(
                             0U, pendulumEncoder);
+                    secondPendulumPosition =
+                        pendulum::calibration::MotorEncoderCalibration::deltaWithRollover(
+                            0U, secondPendulumEncoder);
                 }
                 motorPositionCounts_.store(motorPosition);
                 pendulumPositionCounts_.store(pendulumPosition);
+                secondPendulumPositionCounts_.store(secondPendulumPosition);
                 previousMotor = motorEncoder;
                 previousPendulum = pendulumEncoder;
+                previousSecondPendulum = secondPendulumEncoder;
                 previousTime = sampleTime;
                 havePreviousEncoderSample = true;
                 leftCount = limits.leftTriggered ? leftCount + 1 : 0;
@@ -669,7 +696,8 @@ private:
                 }
                 {
                     std::scoped_lock lock(pendulumSampleMutex_);
-                    pendulumSample_.positionCounts = pendulumPosition;
+                    pendulumSample_.firstPositionCounts = pendulumPosition;
+                    pendulumSample_.secondPositionCounts = secondPendulumPosition;
                     pendulumSample_.motorPositionCounts = motorPosition;
                     pendulumSample_.time = sampleTime;
                     ++pendulumSample_.sequence;
@@ -733,8 +761,10 @@ private:
             printLimits();
         } else if (command == "encoder") {
             notify("motor_position=" + std::to_string(motorPositionCounts_.load()) +
-                   ", pendulum_position=" +
-                   std::to_string(pendulumPositionCounts_.load()));
+                   ", first_pendulum_position=" +
+                   std::to_string(pendulumPositionCounts_.load()) +
+                   ", second_pendulum_position=" +
+                   std::to_string(secondPendulumPositionCounts_.load()));
         } else if (command == "log") {
             printLog();
         } else if (command == "servo") {
@@ -764,15 +794,11 @@ private:
         } else if (command == "balance") {
             std::string action;
             input >> action;
-            if (action == "zero") {
-                capturePendulumZero();
-            } else if (action == "auto") {
-                runAutoBalance();
-            } else if (action == "start") {
+            if (action == "start") {
                 std::string polarity;
                 input >> polarity;
                 if (polarity.empty()) {
-                    startBalance(false);
+                    startBalance();
                 } else {
                     notify("Reference-model signs are fixed; use 'balance start' without a polarity override.", true);
                 }
@@ -786,7 +812,7 @@ private:
                        action == "kv" || action == "ki") {
                 notify("Reference-model gains are locked and cannot be changed at runtime.", true);
             } else {
-                notify("Usage: balance auto|zero|start|stop|status|gains", true);
+                notify("Usage: balance start|stop|status|gains", true);
             }
         } else if (command == "home") {
             std::string target;
@@ -1085,38 +1111,7 @@ private:
         return false;
     }
 
-    void runAutoBalance() {
-        if (balanceRunning_.load()) {
-            notify("Balance control is already running.", true);
-            return;
-        }
-        const bool rememberedCenter = homeResultAvailable_.load();
-        notify(rememberedCenter
-                   ? "Automatic sequence started: returning to the remembered session center, then reference swing-up."
-                   : "Automatic sequence started: first-run two-limit homing, downward-zero confirmation, then reference swing-up.");
-        bool centered = false;
-        if (rememberedCenter) {
-            centered = runHomeReturn();
-            if (centered) {
-                centered = captureStablePendulumZero(
-                    "post-known-center-return");
-            }
-        } else {
-            runHomeOperation(false);
-            centered = homeResultAvailable_.load();
-        }
-        if (!centered || !homeResultAvailable_.load() ||
-            !pendulumZeroCaptured_.load() || faultLatched_.load() ||
-            safety_.stopRequested() || leftTriggered_.load() ||
-            rightTriggered_.load()) {
-            notify("Automatic sequence aborted before swing-up because homing or safety validation failed.",
-                   true);
-            return;
-        }
-        startBalance(true);
-    }
-
-    void startBalance(bool automaticSwingUp) {
+    void startBalance() {
         if (balanceRunning_.load()) {
             notify("Balance control is already running.", true);
             return;
@@ -1130,82 +1125,32 @@ private:
             notify("Finish calibration or homing before balance control.", true);
             return;
         }
-        if (!homeResultAvailable_.load()) {
-            notify("Run 'home center' in this process before balance start; saved positions are not reused.",
-                   true);
-            return;
-        }
-        try {
-            const auto cart = currentCartSessionState(0.0);
-            if (std::abs(cart.positionFromCenterHalfTravel) >
-                config_.balanceControl.maximumBalanceStartPositionFraction) {
-                notify("Balance start rejected: cart is outside the allowed center window; run 'home center' again.",
-                       true);
-                return;
-            }
-        } catch (const std::exception& error) {
-            notify(std::string("Balance start rejected: ") + error.what(), true);
-            return;
-        }
         if (balanceThread_.joinable()) {
             balanceThread_.join();
         }
         balanceAbort_.store(false);
-        balanceSoftwareLimitActive_.store(false);
         balanceMissedDeadlines_.store(0);
         balanceMaxJitterMicroseconds_.store(0.0);
         const auto referenceSample = latestPendulumSample();
-        const auto currentCount = referenceSample.positionCounts;
-        const auto downToStart = wrappedCounts(
-            currentCount - pendulumDownCount_.load(),
-            static_cast<std::int64_t>(
-                config_.balanceControl.pendulumCountsPerRevolution));
-        const auto halfRevolution = static_cast<std::int64_t>(
-            config_.balanceControl.pendulumCountsPerRevolution / 2);
-        const auto uprightErrorCounts =
-            std::llabs(std::llabs(downToStart) - halfRevolution);
-        const auto maximumStartErrorCounts = static_cast<std::int64_t>(
-            std::ceil(config_.balanceControl.maximumBalanceAngleRadians *
-                      static_cast<double>(
-                          config_.balanceControl.pendulumCountsPerRevolution) /
-                      (2.0 * std::numbers::pi)));
-        if (!pendulumZeroCaptured_.load()) {
-            notify("Balance start rejected: no stable downward zero is available.", true);
-            return;
-        }
-        if (automaticSwingUp) {
-            if (std::llabs(downToStart) >
-                config_.balanceControl.downwardZeroMaximumSpanCounts) {
-                notify("Automatic swing-up rejected: pendulum is not stationary at the captured downward position.",
-                       true);
-                return;
-            }
-        } else if (uprightErrorCounts > maximumStartErrorCounts) {
-            notify("Balance start rejected: manually hold the pendulum within the reference model's +/-30 degree upright region.",
-                   true);
-            return;
-        }
-        const auto targetCount = automaticSwingUp
-            ? pendulumDownCount_.load() + halfRevolution
-            : currentCount;
-        pendulumUprightCount_.store(targetCount);
+        firstPendulumUprightCount_.store(referenceSample.firstPositionCounts);
+        secondPendulumUprightCount_.store(referenceSample.secondPositionCounts);
         balanceCartReferenceCount_.store(referenceSample.motorPositionCounts);
-        balanceAutoMode_.store(automaticSwingUp);
         balanceRunning_.store(true);
         const auto runId = balanceRunId_.fetch_add(1) + 1;
         balanceThread_ = std::jthread(
-            [this, runId, automaticSwingUp](std::stop_token token) {
-                balanceLoop(token, runId, automaticSwingUp);
+            [this, runId](std::stop_token token) {
+                balanceLoop(token, runId);
             });
         notify("Balance loop started: run_id=" + std::to_string(runId) +
                ", frequency_hz=" +
                std::to_string(config_.balanceControl.frequencyHz) +
-               ", balance_reference_count=" + std::to_string(targetCount) +
+               ", first_upright_count=" +
+               std::to_string(referenceSample.firstPositionCounts) +
+               ", second_upright_count=" +
+               std::to_string(referenceSample.secondPositionCounts) +
                ", cart_reference_count=" +
                std::to_string(referenceSample.motorPositionCounts) +
-                ", controller=Copy_of_LQR_lp1_1 " +
-                (automaticSwingUp ? "full Swing_up+LQR auto mode."
-                                  : "manual-upright LQR mode."));
+               ", controller=LQR_lp2 manual-upright LQR+ACC2VOL.");
     }
 
 
@@ -1214,18 +1159,14 @@ private:
         message << "reference_lqr_locked=true"
                 << ", kx=" << pendulum::control::ReferenceLqrVelocityController::kCartPositionGain
                 << ", kv=" << pendulum::control::ReferenceLqrVelocityController::kCartVelocityGain
-                << ", ktheta=" << pendulum::control::ReferenceLqrVelocityController::kPendulumAngleGain
-                << ", komega=" << pendulum::control::ReferenceLqrVelocityController::kPendulumAngularRateGain
-                << ", switch_angle_rad=" << pendulum::control::ReferenceLqrVelocityController::kSwitchAngleRadians
-                << ", swing_m=" << pendulum::control::ReferenceLqrVelocityController::kSwingMassKilograms
-                << ", swing_g=" << pendulum::control::ReferenceLqrVelocityController::kGravityMetersPerSecondSquared
-                << ", swing_l=" << pendulum::control::ReferenceLqrVelocityController::kPendulumLengthMeters
-                << ", swing_j=" << pendulum::control::ReferenceLqrVelocityController::kPendulumInertia
-                << ", swing_gain1=" << pendulum::control::ReferenceLqrVelocityController::kSwingEnergyGain
-                << ", swing_gain2=" << pendulum::control::ReferenceLqrVelocityController::kSwingPositionGain
-                << ", swing_position_limit=" << pendulum::control::ReferenceLqrVelocityController::kSwingPositionLimitMeters
+                << ", ktheta1=" << pendulum::control::ReferenceLqrVelocityController::kFirstPendulumAngleGain
+                << ", komega1=" << pendulum::control::ReferenceLqrVelocityController::kFirstPendulumAngularRateGain
+                << ", ktheta2=" << pendulum::control::ReferenceLqrVelocityController::kSecondPendulumAngleGain
+                << ", komega2=" << pendulum::control::ReferenceLqrVelocityController::kSecondPendulumAngularRateGain
+                << ", angle_stop_rad=" << pendulum::control::ReferenceLqrVelocityController::kMaximumAngleRadians
                 << ", velocity_pi_p=" << pendulum::control::ReferenceLqrVelocityController::kVelocityProportionalGain
-                << ", velocity_pi_i=" << pendulum::control::ReferenceLqrVelocityController::kVelocityIntegralGain;
+                << ", velocity_pi_i=" << pendulum::control::ReferenceLqrVelocityController::kVelocityIntegralGain
+                << ", voltage_limit=" << pendulum::control::ReferenceLqrVelocityController::kVoltageLimit;
         notify(message.str());
     }
 
@@ -1244,8 +1185,7 @@ private:
         }
     }
 
-    void balanceLoop(std::stop_token stopToken, std::uint64_t runId,
-                     bool automaticSwingUp) noexcept {
+    void balanceLoop(std::stop_token stopToken, std::uint64_t runId) noexcept {
         const auto statisticsStart = std::chrono::steady_clock::now();
         const auto a710AtStart = a710AlarmCount_.load();
         std::uint64_t statisticsSamples = 0;
@@ -1265,10 +1205,10 @@ private:
             controller.reset();
             auto sample = latestPendulumSample();
             const auto initialOutput = controller.update(
-                sample.positionCounts - pendulumUprightCount_.load(),
-                sample.motorPositionCounts - balanceCartReferenceCount_.load(),
-                automaticSwingUp);
-            if (!automaticSwingUp && initialOutput.outputVoltage != 0.0) {
+                sample.firstPositionCounts - firstPendulumUprightCount_.load(),
+                sample.secondPositionCounts - secondPendulumUprightCount_.load(),
+                sample.motorPositionCounts - balanceCartReferenceCount_.load());
+            if (initialOutput.outputVoltage != 0.0) {
                 throw std::runtime_error(
                     "reference controller did not initialize at zero output");
             }
@@ -1291,13 +1231,7 @@ private:
             auto nextControlTime = sample.time + period;
             const auto balanceStartTime = sample.time;
             std::uint64_t sampleIndex = 0;
-            auto previousSoftwareLimitSide =
-                pendulum::control::SoftwareTravelLimitSide::None;
-            const bool positiveVoltageMovesRight =
-                config_.pci1723.positiveVoltageCartDirection == "RIGHT";
-            record(std::string("Reference Copy_of_LQR_lp1_1 ") +
-                   (automaticSwingUp ? "Swing_up+LQR" : "LQR") +
-                   "+ACC2VOL active at 100 Hz; velocity mode; exact fixed gains");
+            record("Reference LQR_lp2 LQR+ACC2VOL active at 200 Hz; velocity mode; exact fixed gains");
 
             while (!stopToken.stop_requested() && !balanceAbort_.load() &&
                    !faultLatched_.load() && !safety_.stopRequested()) {
@@ -1336,57 +1270,9 @@ private:
                     throw std::runtime_error("limit triggered during balance");
                 }
                 const auto output = controller.update(
-                    sample.positionCounts - pendulumUprightCount_.load(),
-                    sample.motorPositionCounts - balanceCartReferenceCount_.load(),
-                    automaticSwingUp);
-                if (!automaticSwingUp &&
-                    std::abs(output.pendulumAngleRadians) >=
-                    settings.maximumBalanceAngleRadians) {
-                    throw std::runtime_error(
-                        "pendulum left the reference LQR region; swing-up is disabled");
-                }
-                const auto cartSafety = currentCartSessionState(0.0);
-                auto softwareLimit =
-                    pendulum::control::SoftwareTravelLimitOutput{
-                        output.outputVoltage};
-                if (automaticSwingUp) {
-                    softwareLimit = Controller::applySoftwareTravelLimit(
-                        output.outputVoltage,
-                        cartSafety.positionFromCenterHalfTravel,
-                        settings.maximumBalancePositionFraction,
-                        positiveVoltageMovesRight);
-                    balanceSoftwareLimitActive_.store(
-                        softwareLimit.side !=
-                        pendulum::control::SoftwareTravelLimitSide::None);
-                    if (softwareLimit.side != previousSoftwareLimitSide) {
-                        if (softwareLimit.side ==
-                            pendulum::control::SoftwareTravelLimitSide::None) {
-                            record("Swing-up software limit cleared; normal command resumed");
-                            notify("Swing-up recovered inside the software travel limit; continuing.");
-                        } else {
-                            const char* side =
-                                softwareLimit.side ==
-                                        pendulum::control::SoftwareTravelLimitSide::Left
-                                    ? "LEFT"
-                                    : "RIGHT";
-                            record(std::string("Swing-up software limit reached: ") +
-                                   side +
-                                   "; outward commands blocked, run remains active",
-                                   pendulum::logging::Level::Warning);
-                            notify(std::string("Swing-up software limit: ") + side +
-                                   "; attempting inward recovery without stopping.",
-                                   true);
-                        }
-                        previousSoftwareLimitSide = softwareLimit.side;
-                    }
-                    if (softwareLimit.outwardCommandBlocked) {
-                        controller.resetCommandIntegrators();
-                    }
-                } else if (std::abs(cartSafety.positionFromCenterHalfTravel) >=
-                           settings.maximumBalancePositionFraction) {
-                    throw std::runtime_error(
-                        "cart exceeded the session-center software travel envelope");
-                }
+                    sample.firstPositionCounts - firstPendulumUprightCount_.load(),
+                    sample.secondPositionCounts - secondPendulumUprightCount_.load(),
+                    sample.motorPositionCounts - balanceCartReferenceCount_.load());
 
                 {
                     std::scoped_lock lock(outputMutex_);
@@ -1394,19 +1280,26 @@ private:
                         rightTriggered_.load()) {
                         throw std::runtime_error("balance output interrupted");
                     }
-                    analogOutput_.writeVoltage(softwareLimit.outputVoltage);
-                    commandedVoltage_.store(softwareLimit.outputVoltage);
+                    analogOutput_.writeVoltage(output.outputVoltage);
+                    commandedVoltage_.store(output.outputVoltage);
                 }
 
-                const double angleDegrees =
-                    output.pendulumAngleRadians * 180.0 / std::numbers::pi;
-                const double angularRateDegrees =
-                    output.pendulumAngularRateRadiansPerSecond * 180.0 /
+                const double firstAngleDegrees =
+                    output.firstPendulumAngleRadians * 180.0 / std::numbers::pi;
+                const double firstAngularRateDegrees =
+                    output.firstPendulumAngularRateRadiansPerSecond * 180.0 /
                     std::numbers::pi;
-                balanceAngleDegrees_.store(angleDegrees);
-                balanceAngularRateDegrees_.store(angularRateDegrees);
+                const double secondAngleDegrees =
+                    output.secondPendulumAngleRadians * 180.0 / std::numbers::pi;
+                const double secondAngularRateDegrees =
+                    output.secondPendulumAngularRateRadiansPerSecond * 180.0 /
+                    std::numbers::pi;
+                balanceAngleDegrees_.store(firstAngleDegrees);
+                balanceAngularRateDegrees_.store(firstAngularRateDegrees);
+                balanceSecondAngleDegrees_.store(secondAngleDegrees);
+                balanceSecondAngularRateDegrees_.store(secondAngularRateDegrees);
                 balanceReferenceAcceleration_.store(
-                    output.accelerationCommandMetersPerSecondSquared);
+                    output.lqrAccelerationMetersPerSecondSquared);
                 balanceReferenceVelocity_.store(
                     output.velocityReferenceMetersPerSecond);
                 balanceCartPositionMeters_.store(output.cartPositionMeters);
@@ -1415,45 +1308,49 @@ private:
                 balanceVelocityError_.store(output.velocityErrorMetersPerSecond);
                 balancePiIntegralVoltage_.store(output.integralVoltage);
                 balanceProportionalVoltage_.store(output.proportionalVoltage);
-                balanceSwingUpActive_.store(output.swingUpActive);
+                balanceAngleStopActive_.store(output.angleStopActive);
 
                 ++statisticsSamples;
-                angleErrorSumDegrees += angleDegrees;
-                absoluteAngleErrorSumDegrees += std::abs(angleDegrees);
-                squaredAngleErrorSumDegrees += angleDegrees * angleDegrees;
+                angleErrorSumDegrees += firstAngleDegrees;
+                absoluteAngleErrorSumDegrees += std::abs(firstAngleDegrees);
+                squaredAngleErrorSumDegrees +=
+                    firstAngleDegrees * firstAngleDegrees;
                 maximumAngleErrorDegrees = std::max(
-                    maximumAngleErrorDegrees, std::abs(angleDegrees));
+                    maximumAngleErrorDegrees,
+                    std::max(std::abs(firstAngleDegrees),
+                             std::abs(secondAngleDegrees)));
                 maximumOutputVoltage = std::max(
                     maximumOutputVoltage,
-                    std::abs(softwareLimit.outputVoltage));
+                    std::abs(output.outputVoltage));
 
                 if (++sampleIndex % settings.telemetryDivider == 0) {
                     std::ostringstream telemetry;
                     telemetry << "run_id=" << runId
-                              << ",controller_mode="
-                              << (automaticSwingUp
-                                      ? "reference_swing_up_lqr_acc2vol_auto"
-                                      : "reference_lqr_acc2vol_manual_upright")
+                              << ",controller_mode=lqr_lp2_manual_upright"
                               << ",timestamp="
                               << std::chrono::duration<double>(
                                      sample.time - balanceStartTime).count()
                               << ",sample=" << sampleIndex
-                              << ",pendulum_count=" << sample.positionCounts
+                              << ",first_pendulum_count="
+                              << sample.firstPositionCounts
+                              << ",second_pendulum_count="
+                              << sample.secondPositionCounts
                               << ",motor_count=" << sample.motorPositionCounts
-                              << ",theta_rad=" << output.pendulumAngleRadians
-                              << ",theta_dot_rad_s="
-                              << output.pendulumAngularRateRadiansPerSecond
+                              << ",theta1_rad="
+                              << output.firstPendulumAngleRadians
+                              << ",theta1_dot_rad_s="
+                              << output.firstPendulumAngularRateRadiansPerSecond
+                              << ",theta2_rad="
+                              << output.secondPendulumAngleRadians
+                              << ",theta2_dot_rad_s="
+                              << output.secondPendulumAngularRateRadiansPerSecond
                               << ",x_m=" << output.cartPositionMeters
                               << ",x_dot_m_s="
                               << output.cartVelocityMetersPerSecond
-                              << ",acceleration_cmd_m_s2="
-                              << output.accelerationCommandMetersPerSecondSquared
                               << ",lqr_acceleration_m_s2="
                               << output.lqrAccelerationMetersPerSecondSquared
-                              << ",swing_acceleration_m_s2="
-                              << output.swingUpAccelerationMetersPerSecondSquared
-                              << ",swing_up_active=" << std::boolalpha
-                              << output.swingUpActive
+                              << ",angle_stop_active=" << std::boolalpha
+                              << output.angleStopActive
                               << ",velocity_ref_m_s="
                               << output.velocityReferenceMetersPerSecond
                               << ",velocity_error_m_s="
@@ -1461,12 +1358,7 @@ private:
                               << ",pi_p_v=" << output.proportionalVoltage
                               << ",pi_i_v=" << output.integralVoltage
                               << ",controller_ao_v=" << output.outputVoltage
-                              << ",ao_v=" << softwareLimit.outputVoltage
-                              << ",software_limit_active="
-                              << (softwareLimit.side !=
-                                  pendulum::control::SoftwareTravelLimitSide::None)
-                              << ",software_limit_outward_blocked="
-                              << softwareLimit.outwardCommandBlocked
+                              << ",ao_v=" << output.outputVoltage
                               << ",jitter_us=" << jitterUs;
                     logger_.log(pendulum::logging::Level::Info,
                                 "BalanceTelemetry", telemetry.str());
@@ -1481,8 +1373,7 @@ private:
                    pendulum::logging::Level::Error);
         }
         stopOutputs("balance loop exit");
-        balanceSwingUpActive_.store(false);
-        balanceSoftwareLimitActive_.store(false);
+        balanceAngleStopActive_.store(false);
         balanceRunning_.store(false);
         const double stableTimeSeconds = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - statisticsStart).count();
@@ -1509,18 +1400,18 @@ private:
         std::ostringstream message;
         message << "balance_running=" << std::boolalpha
                 << balanceRunning_.load()
-                << ", controller=Copy_of_LQR_lp1_1_LQR_ACC2VOL"
-                << ", automatic_mode=" << balanceAutoMode_.load()
-                << ", swing_up_active=" << balanceSwingUpActive_.load()
-                << ", software_limit_active="
-                << balanceSoftwareLimitActive_.load()
+                << ", controller=LQR_lp2_LQR_ACC2VOL"
+                << ", angle_stop_active=" << balanceAngleStopActive_.load()
                 << ", drive=" << config_.balanceControl.driveModel
                 << ", mode=" << config_.balanceControl.driveControlMode
-                << ", control_period_s=0.01"
+                << ", control_period_s=0.005"
                 << ", acc2vol_integrator_ts_s=0.005"
-                << ", angle_deg=" << balanceAngleDegrees_.load()
-                << ", angular_rate_deg_s="
+                << ", theta1_deg=" << balanceAngleDegrees_.load()
+                << ", theta1_rate_deg_s="
                 << balanceAngularRateDegrees_.load()
+                << ", theta2_deg=" << balanceSecondAngleDegrees_.load()
+                << ", theta2_rate_deg_s="
+                << balanceSecondAngularRateDegrees_.load()
                 << ", acceleration_cmd_m_s2="
                 << balanceReferenceAcceleration_.load()
                 << ", velocity_ref_m_s=" << balanceReferenceVelocity_.load()
@@ -1534,9 +1425,7 @@ private:
                 << ", max_jitter_us=" << balanceMaxJitterMicroseconds_.load()
                 << ", missed_deadlines=" << balanceMissedDeadlines_.load()
                 << ", motor_encoder_feedback=true"
-                << ", first_auto_fresh_home=true"
-                << ", remembered_center_available="
-                << homeResultAvailable_.load();
+                << ", manual_upright_capture=true";
         notify(message.str());
     }
 
@@ -1770,7 +1659,9 @@ private:
                 << ", ao_voltage=" << commandedVoltage_.load()
                 << ", fault=" << faultLatched_.load()
                 << ", motor_position=" << motorPositionCounts_.load()
-                << ", pendulum_position=" << pendulumPositionCounts_.load()
+                << ", first_pendulum_position=" << pendulumPositionCounts_.load()
+                << ", second_pendulum_position="
+                << secondPendulumPositionCounts_.load()
                 << ", home_session_result="
                 << (homeResultAvailable_.load() ? "available" : "not_run");
         if (homeResultAvailable_.load()) {
@@ -1809,9 +1700,7 @@ private:
             << "  home center                     Measure both limits and center this session\n"
             << "  home return                     Return to the known session center\n"
             << "  calibrate zero                  Calibrate and hold motor Vzero\n"
-            << "  balance zero                    Recapture downward count (automatic at startup)\n"
-            << "  balance auto                    Home/center, then reference Swing_up+LQR\n"
-            << "  balance start                   Start locked reference LQR+ACC2VOL\n"
+            << "  balance start                   Capture upright zeros and start LQR_lp2\n"
             << "  balance gains                   Show locked reference-model constants\n"
             << "  balance stop | status           Stop or inspect angle stabilization\n";
     }
@@ -1882,23 +1771,27 @@ private:
     std::atomic<bool> calibrationAbort_{false};
     std::atomic<bool> balanceRunning_{false};
     std::atomic<bool> balanceAbort_{false};
-    std::atomic<bool> balanceAutoMode_{false};
-    std::atomic<bool> balanceSwingUpActive_{false};
-    std::atomic<bool> balanceSoftwareLimitActive_{false};
+    std::atomic<bool> balanceAngleStopActive_{false};
     std::atomic<std::uint64_t> balanceRunId_{0};
     std::atomic<bool> pendulumZeroCaptured_{false};
     std::atomic<bool> servoOn_{false};
     std::atomic<double> commandedVoltage_{0.0};
     std::atomic<std::uint32_t> encoderRaw_{0};
     std::atomic<std::uint32_t> pendulumEncoderRaw_{0};
+    std::atomic<std::uint32_t> secondPendulumEncoderRaw_{0};
     std::atomic<std::int64_t> motorPositionCounts_{0};
     std::atomic<std::int64_t> pendulumPositionCounts_{0};
+    std::atomic<std::int64_t> secondPendulumPositionCounts_{0};
     std::atomic<double> motorSpeedCountsPerSecond_{0.0};
     std::atomic<double> pendulumSpeedCountsPerSecond_{0.0};
+    std::atomic<double> secondPendulumSpeedCountsPerSecond_{0.0};
     std::atomic<std::int64_t> pendulumDownCount_{0};
-    std::atomic<std::int64_t> pendulumUprightCount_{0};
+    std::atomic<std::int64_t> firstPendulumUprightCount_{0};
+    std::atomic<std::int64_t> secondPendulumUprightCount_{0};
     std::atomic<double> balanceAngleDegrees_{0.0};
     std::atomic<double> balanceAngularRateDegrees_{0.0};
+    std::atomic<double> balanceSecondAngleDegrees_{0.0};
+    std::atomic<double> balanceSecondAngularRateDegrees_{0.0};
     std::atomic<double> balanceReferenceAcceleration_{0.0};
     std::atomic<double> balanceReferenceVelocity_{0.0};
     std::atomic<double> balanceCartPositionMeters_{0.0};

@@ -147,6 +147,16 @@ AppConfig AppConfig::load(const std::filesystem::path& path) {
         requireValue<std::string>(ni, "pendulum_encoder_decoding");
     config.ni6602.pendulumEncoderFilterMinPulseWidthMicroseconds =
         requireValue<double>(ni, "pendulum_encoder_filter_min_pulse_width_us");
+    config.ni6602.secondPendulumCounter =
+        requireValue<std::string>(ni, "second_pendulum_counter");
+    config.ni6602.secondPendulumEncoderATerminal =
+        requireValue<std::string>(ni, "second_pendulum_encoder_a_terminal");
+    config.ni6602.secondPendulumEncoderBTerminal =
+        requireValue<std::string>(ni, "second_pendulum_encoder_b_terminal");
+    config.ni6602.secondPendulumEncoderDecoding =
+        requireValue<std::string>(ni, "second_pendulum_encoder_decoding");
+    config.ni6602.secondPendulumEncoderFilterMinPulseWidthMicroseconds =
+        requireValue<double>(ni, "second_pendulum_encoder_filter_min_pulse_width_us");
     config.ni6602.leftLimitLine = requireValue<std::string>(ni, "left_limit_line");
     config.ni6602.leftLimitActiveHigh = requireValue<bool>(ni, "left_limit_active_high");
     config.ni6602.rightLimitLine = requireValue<std::string>(ni, "right_limit_line");
@@ -291,6 +301,10 @@ AppConfig AppConfig::load(const std::filesystem::path& path) {
         requireValue<std::uint32_t>(balance, "pendulum_pulses_per_revolution");
     control.pendulumCountsPerRevolution =
         requireValue<std::uint32_t>(balance, "pendulum_counts_per_revolution");
+    control.secondPendulumPulsesPerRevolution =
+        requireValue<std::uint32_t>(balance, "second_pendulum_pulses_per_revolution");
+    control.secondPendulumCountsPerRevolution =
+        requireValue<std::uint32_t>(balance, "second_pendulum_counts_per_revolution");
     control.downwardZeroCaptureSeconds =
         requireValue<double>(balance, "downward_zero_capture_seconds");
     control.downwardZeroSettleTimeoutSeconds =
@@ -426,6 +440,12 @@ void AppConfig::validateForEnumeration() const {
         throw std::runtime_error(
             "pendulum_encoder_filter_min_pulse_width_us must be finite and non-negative");
     }
+    if (!std::isfinite(
+            ni6602.secondPendulumEncoderFilterMinPulseWidthMicroseconds) ||
+        ni6602.secondPendulumEncoderFilterMinPulseWidthMicroseconds < 0.0) {
+        throw std::runtime_error(
+            "second_pendulum_encoder_filter_min_pulse_width_us must be finite and non-negative");
+    }
     requireNotEmpty(pci1723.deviceDescription, "hardware.pci1723.device_description");
     if (pci1723.aoChannel < 0) {
         throw std::runtime_error("hardware.pci1723.ao_channel must be non-negative");
@@ -514,6 +534,24 @@ void AppConfig::validateForManualConsole() const {
         ni6602.pendulumEncoderATerminal != ni6602.pendulumEncoderBTerminal;
     if (!pendulumDefaultRouting && !pendulumExplicitRouting) {
         throw std::runtime_error("Pendulum encoder A/B routing is invalid");
+    }
+    if (!isConfirmed(ni6602.secondPendulumCounter) ||
+        !isConfirmed(ni6602.secondPendulumEncoderATerminal) ||
+        !isConfirmed(ni6602.secondPendulumEncoderBTerminal) ||
+        ni6602.secondPendulumEncoderDecoding != "X4") {
+        throw std::runtime_error(
+            "Manual console requires a confirmed X4 second-pendulum encoder");
+    }
+    const bool secondPendulumDefaultRouting =
+        ni6602.secondPendulumEncoderATerminal == "DEFAULT" &&
+        ni6602.secondPendulumEncoderBTerminal == "DEFAULT";
+    const bool secondPendulumExplicitRouting =
+        ni6602.secondPendulumEncoderATerminal != "DEFAULT" &&
+        ni6602.secondPendulumEncoderBTerminal != "DEFAULT" &&
+        ni6602.secondPendulumEncoderATerminal !=
+            ni6602.secondPendulumEncoderBTerminal;
+    if (!secondPendulumDefaultRouting && !secondPendulumExplicitRouting) {
+        throw std::runtime_error("Second-pendulum encoder A/B routing is invalid");
     }
     if (!isConfirmed(ni6602.leftLimitLine) || !isConfirmed(ni6602.rightLimitLine) ||
         ni6602.leftLimitLine == ni6602.rightLimitLine) {
@@ -622,18 +660,22 @@ void AppConfig::validateForManualConsole() const {
     const auto& control = balanceControl;
     if (control.driveModel.empty() ||
         control.driveControlMode != "ANALOG_VELOCITY" ||
-        control.frequencyHz != 100 ||
+        control.frequencyHz != 200 ||
         control.pendulumPulsesPerRevolution == 0 ||
-        control.pendulumCountsPerRevolution != 8000 ||
+        control.pendulumCountsPerRevolution != 10000 ||
         control.pendulumCountsPerRevolution !=
             control.pendulumPulsesPerRevolution * 4ULL ||
+        control.secondPendulumPulsesPerRevolution == 0 ||
+        control.secondPendulumCountsPerRevolution != 4000 ||
+        control.secondPendulumCountsPerRevolution !=
+            control.secondPendulumPulsesPerRevolution * 4ULL ||
         !positiveFiniteHome(control.downwardZeroCaptureSeconds) ||
         !positiveFiniteHome(control.downwardZeroSettleTimeoutSeconds) ||
         control.downwardZeroSettleTimeoutSeconds < control.downwardZeroCaptureSeconds ||
         control.downwardZeroMaximumSpanCounts < 0 ||
         !std::isfinite(control.maximumBalanceAngleRadians) ||
         std::abs(control.maximumBalanceAngleRadians -
-                 std::numbers::pi / 6.0) > 1e-12 ||
+                 std::numbers::pi / 18.0) > 1e-12 ||
         !std::isfinite(control.maximumBalanceStartPositionFraction) ||
         control.maximumBalanceStartPositionFraction <= 0.0 ||
         !std::isfinite(control.maximumBalancePositionFraction) ||
@@ -643,7 +685,7 @@ void AppConfig::validateForManualConsole() const {
         control.telemetryDivider == 0) {
         throw std::runtime_error("Balance-control settings are invalid");
     }
-    if (pci1723.minimumVoltage > -1.0 || pci1723.maximumVoltage < 1.0) {
+    if (pci1723.minimumVoltage > -2.0 || pci1723.maximumVoltage < 2.0) {
         throw std::runtime_error("Balance voltage settings exceed the AO range");
     }
 }

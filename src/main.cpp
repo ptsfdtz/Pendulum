@@ -16,7 +16,7 @@
 
 namespace {
 
-enum class Mode { EnumerateOnly, InputProbe, SafeOutputTest };
+enum class Mode { EnumerateOnly, InputProbe, EncoderProbe, SafeOutputTest };
 
 struct Options {
     std::filesystem::path configPath{"config/config.json"};
@@ -36,6 +36,8 @@ Options parseOptions(int argc, char* argv[]) {
             options.mode = Mode::EnumerateOnly;
         } else if (argument == "--input-probe") {
             options.mode = Mode::InputProbe;
+        } else if (argument == "--encoder-probe") {
+            options.mode = Mode::EncoderProbe;
         } else if (argument == "--safe-output-test") {
             options.mode = Mode::SafeOutputTest;
         } else if (argument == "--help" || argument == "-h") {
@@ -44,6 +46,7 @@ Options parseOptions(int argc, char* argv[]) {
                 << "Modes:\n"
                 << "  --enumerate-only    Enumerate devices without creating output tasks (default)\n"
                 << "  --input-probe       Read and interpret limit inputs without output tasks\n"
+                << "  --encoder-probe     Read all three encoder counters without output tasks\n"
                 << "  --safe-output-test  Write AO0=0 V and Servo OFF; config authorization required\n";
             std::exit(0);
         } else {
@@ -51,6 +54,42 @@ Options parseOptions(int argc, char* argv[]) {
         }
     }
     return options;
+}
+
+void runEncoderProbe(const pendulum::config::AppConfig& config,
+                     pendulum::logging::AsyncLogger& logger) {
+    config.validateForManualConsole();
+    pendulum::hardware::NI6602 ni;
+    ni.configureMotorEncoder(
+        config.ni6602.motorCounter, config.ni6602.motorEncoderATerminal,
+        config.ni6602.motorEncoderBTerminal,
+        config.ni6602.motorEncoderPulsesPerRevolution,
+        config.ni6602.motorEncoderFilterMinPulseWidthMicroseconds * 1e-6);
+    ni.configurePendulumEncoderRaw(
+        config.ni6602.pendulumCounter,
+        config.ni6602.pendulumEncoderATerminal,
+        config.ni6602.pendulumEncoderBTerminal,
+        config.ni6602.pendulumEncoderFilterMinPulseWidthMicroseconds * 1e-6);
+    ni.configureSecondPendulumEncoderRaw(
+        config.ni6602.secondPendulumCounter,
+        config.ni6602.secondPendulumEncoderATerminal,
+        config.ni6602.secondPendulumEncoderBTerminal,
+        config.ni6602.secondPendulumEncoderFilterMinPulseWidthMicroseconds *
+            1e-6);
+
+    const auto motor = ni.readMotorEncoderRaw();
+    const auto first = ni.readPendulumEncoderRaw();
+    const auto second = ni.readSecondPendulumEncoderRaw();
+    std::cout << "Cart encoder " << config.ni6602.motorCounter
+              << ": raw=" << motor << '\n'
+              << "First pendulum " << config.ni6602.pendulumCounter
+              << ": raw=" << first << '\n'
+              << "Second pendulum " << config.ni6602.secondPendulumCounter
+              << ": raw=" << second << '\n';
+    logger.log(pendulum::logging::Level::Info, "EncoderProbe",
+               "motor=" + std::to_string(motor) +
+                   ", first=" + std::to_string(first) +
+                   ", second=" + std::to_string(second));
 }
 
 bool readStableDigitalLine(const std::string& line, std::size_t samples = 10) {
@@ -163,6 +202,9 @@ int runApplication(const Options& options) {
         verifyAndReportDevices(config, logger);
         if (options.mode == Mode::SafeOutputTest) {
             runSafeOutputTest(config, safety, logger);
+        } else if (options.mode == Mode::EncoderProbe) {
+            runEncoderProbe(config, logger);
+            std::cout << "Encoder probe passed. No output tasks were created.\n";
         } else if (options.mode == Mode::InputProbe) {
             runInputProbe(config, logger);
             std::cout << "Input probe passed. No output tasks were created.\n";

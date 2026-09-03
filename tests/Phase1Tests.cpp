@@ -34,13 +34,21 @@ void testDefaultConfig(const std::filesystem::path& path) {
             "pendulum counter mismatch");
     require(config.ni6602.pendulumEncoderDecoding == "X4",
             "pendulum encoder decoding mismatch");
-    require(config.ni6602.pendulumEncoderFilterMinPulseWidthMicroseconds == 10.0,
+    require(config.ni6602.pendulumEncoderFilterMinPulseWidthMicroseconds == 0.0,
             "pendulum encoder digital filter mismatch");
+    require(config.ni6602.secondPendulumCounter == "Dev1/ctr2",
+            "second-pendulum counter mismatch");
+    require(config.ni6602.secondPendulumEncoderDecoding == "X4",
+            "second-pendulum encoder decoding mismatch");
+    require(
+        config.ni6602.secondPendulumEncoderFilterMinPulseWidthMicroseconds ==
+            0.0,
+        "second-pendulum encoder digital filter mismatch");
     require(config.balanceControl.downwardZeroCaptureSeconds == 1.5 &&
                 config.balanceControl.downwardZeroSettleTimeoutSeconds == 20.0 &&
                 config.balanceControl.downwardZeroMaximumSpanCounts == 8,
             "stable downward-zero capture settings mismatch");
-    require(config.ni6602.motorEncoderFilterMinPulseWidthMicroseconds == 10.0,
+    require(config.ni6602.motorEncoderFilterMinPulseWidthMicroseconds == 0.0,
             "motor encoder digital filter mismatch");
     require(config.pci1723.deviceDescription == "PCI-1723,BID#15",
             "Advantech device mismatch");
@@ -61,18 +69,21 @@ void testDefaultConfig(const std::filesystem::path& path) {
                 config.homeCenter.centerMidVoltage == 0.075 &&
                 config.homeCenter.centerSlowVoltage == 0.03,
             "home-center return speed profile mismatch");
-    require(config.balanceControl.pendulumPulsesPerRevolution == 2000,
+    require(config.balanceControl.pendulumPulsesPerRevolution == 2500,
             "pendulum PPR mismatch");
-    require(config.balanceControl.pendulumCountsPerRevolution == 8000,
+    require(config.balanceControl.pendulumCountsPerRevolution == 10000,
             "pendulum X4 counts/rev mismatch");
+    require(config.balanceControl.secondPendulumPulsesPerRevolution == 1000 &&
+                config.balanceControl.secondPendulumCountsPerRevolution == 4000,
+            "second-pendulum X4 resolution mismatch");
     require(config.balanceControl.driveModel == "SGD7S-180A00A002",
             "servo drive model mismatch");
     require(config.balanceControl.driveControlMode == "ANALOG_VELOCITY",
             "servo drive control mode mismatch");
-    require(config.balanceControl.frequencyHz == 100,
+    require(config.balanceControl.frequencyHz == 200,
             "reference control frequency mismatch");
     require(std::abs(config.balanceControl.maximumBalanceAngleRadians -
-                     std::numbers::pi / 6.0) < 1e-12,
+                     std::numbers::pi / 18.0) < 1e-12,
             "manual-upright LQR region mismatch");
     require(config.balanceControl.maximumBalanceStartPositionFraction == 0.1 &&
                 config.balanceControl.maximumBalancePositionFraction == 0.85,
@@ -93,117 +104,67 @@ void testReferenceLqrVelocityController() {
     Controller controller;
     controller.reset();
 
-    const auto zero = controller.update(0, 0);
+    const auto zero = controller.update(0, 0, 0);
     require(zero.outputVoltage == 0.0 &&
                 zero.velocityReferenceMetersPerSecond == 0.0,
-            "reference controller zero-state output mismatch");
+            "LQR_lp2 zero-state output mismatch");
 
-    const auto negativeAfterModelTick = controller.update(-1, 0);
-    require(negativeAfterModelTick.velocityReferenceMetersPerSecond < 0.0 &&
-                negativeAfterModelTick.outputVoltage < 0.0,
-            "reference t=0 state update ordering mismatch");
-
-    controller.reset();
-    const auto firstNegativeAcceleration = controller.update(-1, 0);
-    require(firstNegativeAcceleration.velocityReferenceMetersPerSecond == 0.0 &&
-                firstNegativeAcceleration.outputVoltage == 0.0,
-            "reference first-step clamp state mismatch");
-
-    controller.reset();
-
-    const auto onePendulumCount = controller.update(1, 0);
-    const double theta = -2.0 * std::numbers::pi / 8000.0;
-    const double omega = theta / 0.01;
-    const double acceleration =
-        std::clamp(-58.6 * theta - 10.69 * omega, -10.0, 10.0);
+    // One negative count on encoder 3 produces a positive absolute link-2
+    // angle and exercises the model's first-tick integrator ordering.
+    const auto oneSecondPendulumCount = controller.update(0, -1, 0);
+    const double theta2 = 2.0 * std::numbers::pi / 4000.0;
+    const double omega2 = theta2 / 0.005;
+    const double acceleration = std::clamp(
+        150.31 * theta2 + 23.63 * omega2, -30.0, 30.0);
     const double velocityReference = 0.005 * acceleration;
-    const double integralVoltage = 0.005 * velocityReference * 54.0;
+    const double integralVoltage = 0.005 * velocityReference * 27.0;
     const double expectedVoltage =
-        std::clamp(0.18 * velocityReference + integralVoltage, -1.0, 1.0);
-    require(std::abs(onePendulumCount.pendulumAngleRadians - theta) < 1e-15 &&
-                std::abs(onePendulumCount.accelerationCommandMetersPerSecondSquared -
+        std::clamp(0.18 * velocityReference + integralVoltage, -2.0, 2.0);
+    require(std::abs(oneSecondPendulumCount.firstPendulumAngleRadians) < 1e-15 &&
+                std::abs(oneSecondPendulumCount.secondPendulumAngleRadians -
+                         theta2) < 1e-15 &&
+                std::abs(oneSecondPendulumCount.lqrAccelerationMetersPerSecondSquared -
                          acceleration) < 1e-12 &&
-                std::abs(onePendulumCount.velocityReferenceMetersPerSecond -
+                std::abs(oneSecondPendulumCount.velocityReferenceMetersPerSecond -
                          velocityReference) < 1e-12 &&
-                std::abs(onePendulumCount.outputVoltage - expectedVoltage) < 1e-12,
-            "reference generated-code sequence mismatch");
+                std::abs(oneSecondPendulumCount.outputVoltage - expectedVoltage) <
+                    1e-12,
+            "LQR_lp2 generated-code sequence mismatch");
 
     controller.reset();
-    const auto cartCount = controller.update(0, 1);
+    const auto firstPendulumCount = controller.update(1, 0, 0);
+    const double theta1 = -2.0 * std::numbers::pi / 10000.0;
+    require(std::abs(firstPendulumCount.firstPendulumAngleRadians - theta1) <
+                1e-15 &&
+                std::abs(firstPendulumCount.secondPendulumAngleRadians - theta1) <
+                    1e-15,
+            "inter-link angle composition or first encoder scaling mismatch");
+
+    controller.reset();
+    const auto cartCount = controller.update(0, 0, 1);
     const double x = -0.163 / 8000.0;
-    const double velocity = x / 0.01;
+    const double velocity = x / 0.005;
     require(std::abs(cartCount.cartPositionMeters - x) < 1e-15 &&
                 std::abs(cartCount.cartVelocityMetersPerSecond - velocity) < 1e-15,
-            "reference cart encoder sign or scaling mismatch");
+            "LQR_lp2 cart encoder sign or scaling mismatch");
 
     controller.reset();
     for (int index = 0; index < 200; ++index) {
-        const auto saturated = controller.update(1000, 0);
-        require(saturated.accelerationCommandMetersPerSecondSquared >= -10.0 &&
-                    saturated.accelerationCommandMetersPerSecondSquared <= 10.0 &&
+        const auto saturated = controller.update(1000, -1000, 0);
+        require(saturated.lqrAccelerationMetersPerSecondSquared >= -30.0 &&
+                    saturated.lqrAccelerationMetersPerSecondSquared <= 30.0 &&
                     saturated.velocityReferenceMetersPerSecond >= -0.6 &&
                     saturated.velocityReferenceMetersPerSecond <= 0.6 &&
-                    saturated.outputVoltage >= -1.0 &&
-                    saturated.outputVoltage <= 1.0,
-                "reference controller saturation mismatch");
+                    saturated.outputVoltage >= -2.0 &&
+                    saturated.outputVoltage <= 2.0,
+                "LQR_lp2 saturation mismatch");
     }
 
     controller.reset();
-    const auto firstDownwardAuto = controller.update(-4000, 0, true);
-    require(firstDownwardAuto.swingUpActive &&
-                std::abs(firstDownwardAuto.swingUpAccelerationMetersPerSecondSquared +
-                         5.0) < 1e-12 &&
-                std::abs(firstDownwardAuto.accelerationCommandMetersPerSecondSquared +
-                         5.0) < 1e-12 &&
-                firstDownwardAuto.outputVoltage == 0.0,
-            "reference first swing-up tick mismatch");
-
-    const auto stationaryDownwardAuto = controller.update(-4000, 0, true);
-    require(stationaryDownwardAuto.swingUpActive &&
-                stationaryDownwardAuto.swingUpAccelerationMetersPerSecondSquared == 0.0,
-            "reference stationary-down swing-up state mismatch");
-
-    controller.reset();
-    const auto nearUprightAuto = controller.update(100, 0, true);
-    require(!nearUprightAuto.swingUpActive &&
-                nearUprightAuto.accelerationCommandMetersPerSecondSquared ==
-                    nearUprightAuto.lqrAccelerationMetersPerSecondSquared,
-            "reference Swing_up-to-LQR switch mismatch");
-
-    controller.reset();
-    const auto manualOutsideRegion = controller.update(-4000, 0, false);
-    require(!manualOutsideRegion.swingUpActive &&
-                manualOutsideRegion.accelerationCommandMetersPerSecondSquared ==
-                    manualOutsideRegion.lqrAccelerationMetersPerSecondSquared,
-            "manual-upright branch must remain LQR-only");
-
-    const auto rightBlocked = Controller::applySoftwareTravelLimit(
-        0.4, 0.85, 0.85, true);
-    require(rightBlocked.side ==
-                pendulum::control::SoftwareTravelLimitSide::Right &&
-                rightBlocked.outwardCommandBlocked &&
-                rightBlocked.outputVoltage == 0.0,
-            "right software limit did not block an outward command");
-    const auto rightRecovery = Controller::applySoftwareTravelLimit(
-        -0.4, 0.90, 0.85, true);
-    require(rightRecovery.side ==
-                pendulum::control::SoftwareTravelLimitSide::Right &&
-                !rightRecovery.outwardCommandBlocked &&
-                rightRecovery.outputVoltage == -0.4,
-            "right software limit blocked an inward recovery command");
-    const auto leftBlockedReversedPolarity =
-        Controller::applySoftwareTravelLimit(0.4, -0.90, 0.85, false);
-    require(leftBlockedReversedPolarity.side ==
-                pendulum::control::SoftwareTravelLimitSide::Left &&
-                leftBlockedReversedPolarity.outwardCommandBlocked &&
-                leftBlockedReversedPolarity.outputVoltage == 0.0,
-            "software limit did not honor the configured motor polarity");
-    const auto insideEnvelope = Controller::applySoftwareTravelLimit(
-        0.4, 0.84, 0.85, true);
-    require(insideEnvelope.side ==
-                pendulum::control::SoftwareTravelLimitSide::None &&
-                insideEnvelope.outputVoltage == 0.4,
-            "software limit changed a command inside the envelope");
+    const auto outsideAngle = controller.update(0, -112, 0);
+    require(outsideAngle.angleStopActive &&
+                outsideAngle.velocityReferenceMetersPerSecond == 0.0,
+            "LQR_lp2 angle-stop integrator reset mismatch");
 }
 
 void testSafetyOrderAndFaultContainment() {

@@ -51,13 +51,23 @@ as the stationary command while Servo is ON.
 - [x] NI counter physical channel: `Dev1/ctr0`
 - [x] Encoder A input: CTR0 SOURCE, connector pin 2 (DAQmx default routing)
 - [x] Encoder B input: CTR0 AUX, connector pin 40 (DAQmx default routing)
-- [x] A/B digital minimum-pulse-width filter: 10 us (verified accepted by PCI-6602)
-- [x] Filtered powered full travel: 33112 counts on 2026-09-01
-- [x] Pendulum A-axis A/B digital minimum-pulse-width filter: 10 us
+- [x] A/B digital minimum-pulse-width filter: disabled (0 us), matching `LQR_lp2.slx`
+- [x] Previously measured powered full travel: 33112 counts on 2026-09-01
 - [ ] Manual distance calibration completed and `counts_per_mm` saved
 
 The calibration tool intentionally refuses to start until the counter and both encoder terminals
 are confirmed. It does not infer pulley geometry.
+
+## Double-pendulum encoder inputs
+
+- [x] First pendulum: `Dev1/ctr1`, CTR1 SOURCE pin 7, CTR1 AUX pin 6
+- [x] First pendulum: X4, 2500 PPR, 10000 counts/rev
+- [x] Second pendulum: `Dev1/ctr2`, CTR2 SOURCE pin 34, CTR2 AUX pin 66
+- [x] Second pendulum: X4, 1000 PPR, 4000 counts/rev
+- [x] Second-pendulum Z phase: optional CTR2 GATE pin 67, not used by control
+- [x] Second-pendulum supply: +5 V pin 1; D GND pin 33 or 68
+- [x] Both pendulum A/B digital minimum-pulse-width filters: disabled (0 us), matching `LQR_lp2.slx`
+- [x] Read-only encoder probe created and read CTR0, CTR1, and CTR2 input tasks on 2026-09-03
 
 ## Output-test authorization
 

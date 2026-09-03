@@ -47,6 +47,13 @@ public:
     std::uint32_t readPendulumEncoderRaw();
     bool pendulumEncoderConfigured() const noexcept;
 
+    void configureSecondPendulumEncoderRaw(
+        const std::string& counter, const std::string& phaseATerminal,
+        const std::string& phaseBTerminal,
+        double filterMinPulseWidthSeconds);
+    std::uint32_t readSecondPendulumEncoderRaw();
+    bool secondPendulumEncoderConfigured() const noexcept;
+
     void configureLimitInputs(const std::string& leftLine,
                               bool leftActiveHigh,
                               const std::string& rightLine,

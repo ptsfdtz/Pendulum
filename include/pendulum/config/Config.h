@@ -25,6 +25,11 @@ struct Ni6602Config {
     std::string pendulumEncoderBTerminal;
     std::string pendulumEncoderDecoding;
     double pendulumEncoderFilterMinPulseWidthMicroseconds{0.0};
+    std::string secondPendulumCounter;
+    std::string secondPendulumEncoderATerminal;
+    std::string secondPendulumEncoderBTerminal;
+    std::string secondPendulumEncoderDecoding;
+    double secondPendulumEncoderFilterMinPulseWidthMicroseconds{0.0};
     std::string leftLimitLine;
     bool leftLimitActiveHigh{true};
     std::string rightLimitLine;
@@ -109,9 +114,11 @@ struct HomeCenterConfig {
 struct BalanceControlConfig {
     std::string driveModel{"SGD7S-180A00A002"};
     std::string driveControlMode{"ANALOG_VELOCITY"};
-    std::uint32_t frequencyHz{100};
-    std::uint32_t pendulumPulsesPerRevolution{2000};
-    std::uint32_t pendulumCountsPerRevolution{8000};
+    std::uint32_t frequencyHz{200};
+    std::uint32_t pendulumPulsesPerRevolution{2500};
+    std::uint32_t pendulumCountsPerRevolution{10000};
+    std::uint32_t secondPendulumPulsesPerRevolution{1000};
+    std::uint32_t secondPendulumCountsPerRevolution{4000};
     double downwardZeroCaptureSeconds{1.5};
     double downwardZeroSettleTimeoutSeconds{20.0};
     std::int64_t downwardZeroMaximumSpanCounts{8};
