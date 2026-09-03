@@ -1,5 +1,5 @@
 {
-  "objective": "Use the complete Copy_of_LQR_lp1_1.slx controller, including automatic swing-up and LQR switching through balance auto, while retaining limits, Servo, homing, and shutdown safety.",
+  "objective": "Keep the existing Copy_of_LQR_lp1_1.slx controller unchanged; make only the first balance auto in each program process measure both limits, then reuse the remembered center for later balance auto commands while retaining limits, Servo, and shutdown safety.",
   "reference": {
     "model": "E:\\直线倒立摆库\\demo\\Copy_of_LQR_lp1_1.slx",
     "model_version": "4.37",
@@ -28,6 +28,7 @@
     "Physical limit debounce and immediate output shutdown",
     "Servo enable/disable and process-fault shutdown",
     "Fresh two-limit homing and software travel envelope",
+    "First automatic run measures both limits; later automatic runs reuse the remembered in-process center",
     "Encoder monitoring, manual console, and telemetry logging"
   ],
   "removed": [
@@ -45,5 +46,16 @@
   },
   "blocking": [
     "Physical balance behavior cannot be claimed verified until an operator-authorized supervised hardware run is completed."
-  ]
+  ],
+  "current_change": {
+    "scope": "Supervisory homing sequence only; the fast Swing_up/LQR/ACC2VOL control path is unchanged.",
+    "baseline": "runAutoBalance always calls fresh two-limit homing even though an in-process center and returnToKnownCenter implementation already exist.",
+    "acceptance": [
+      "First balance auto performs fresh two-limit homing and stores center geometry.",
+      "Later balance auto returns to the remembered center without probing both limits.",
+      "A failed known-center return aborts before balance starts.",
+      "Physical limits and Servo shutdown behavior remain active."
+    ],
+    "status": "implemented; independent Release build and phase1_tests passed 1/1 on 2026-09-03; hardware motion not run"
+  }
 }

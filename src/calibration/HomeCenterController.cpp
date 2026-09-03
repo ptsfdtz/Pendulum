@@ -58,6 +58,40 @@ std::int64_t HomeCenterController::returnToKnownCenter(
     if (travel <= 0 || (aoToEncoderSign != -1.0 && aoToEncoderSign != 1.0)) {
         throw std::invalid_argument("Invalid known-center return geometry");
     }
+    auto sample = readSample_();
+    if (sample.leftLimit && sample.rightLimit) {
+        throw std::runtime_error("Both limits are active");
+    }
+    if (sample.leftLimit || sample.rightLimit) {
+        const auto side = sample.leftLimit ? LimitSide::Left : LimitSide::Right;
+        const auto error = target - sample.positionCounts;
+        if (error == 0) {
+            throw std::runtime_error(
+                "Known center coincides with an active limit");
+        }
+        const double encoderDirection = error > 0 ? 1.0 : -1.0;
+        const double releaseVoltage = encoderDirection * aoToEncoderSign *
+                                      settings_.escapeVoltage;
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::duration<double>(
+                                  settings_.backoffTimeoutSeconds);
+        report(std::string("Releasing active ") + sideName(side) +
+               " limit toward remembered center");
+        while (sample.leftLimit || sample.rightLimit) {
+            checkAbort();
+            commandMotion_(releaseVoltage, side);
+            if (std::chrono::steady_clock::now() >= deadline) {
+                throw std::runtime_error(
+                    "Timed out releasing active limit toward known center");
+            }
+            waitPoll();
+            sample = readSample_();
+            if (sample.leftLimit && sample.rightLimit) {
+                throw std::runtime_error("Both limits are active");
+            }
+        }
+        stopMotion_("known-center active limit released");
+    }
     const auto finalPosition = moveToCenter(target, travel, aoToEncoderSign);
     stopMotion_("known center return complete");
     return finalPosition;

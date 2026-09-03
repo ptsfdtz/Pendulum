@@ -261,6 +261,7 @@ void testHomeCenterMath() {
     double voltage = 0.0;
     bool firstBoundaryRefined = false;
     double maximumCommandAfterFirstBoundary = 0.0;
+    bool sawKnownCenterRightRelease = false;
     HomeCenterController controller(
         settings, true,
         [&] {
@@ -272,8 +273,12 @@ void testHomeCenterMath() {
             return pendulum::calibration::HomeCenterSample{
                 position, position <= -10, position >= 10};
         },
-        [&](double command,
-            pendulum::calibration::LimitSide) { voltage = command; },
+        [&](double command, pendulum::calibration::LimitSide releaseSide) {
+            voltage = command;
+            sawKnownCenterRightRelease =
+                sawKnownCenterRightRelease ||
+                releaseSide == pendulum::calibration::LimitSide::Right;
+        },
         [&](const std::string&) { voltage = 0.0; }, [] { return false; });
     const auto result = controller.run();
     require(result.leftBoundaryCounts == -10,
@@ -295,6 +300,16 @@ void testHomeCenterMath() {
     const auto returned = controller.returnToKnownCenter(0, 20, -1.0);
     require(std::llabs(returned) <= 1,
             "known-center return did not reuse the measured center");
+
+    position = 10;
+    voltage = 0.0;
+    sawKnownCenterRightRelease = false;
+    const auto returnedFromLimit =
+        controller.returnToKnownCenter(0, 20, -1.0);
+    require(std::llabs(returnedFromLimit) <= 1,
+            "known-center return failed from an active limit");
+    require(sawKnownCenterRightRelease,
+            "known-center return did not declare the verified release side");
 
     position = -6;
     voltage = 0.0;

@@ -38,9 +38,11 @@ The reference `ACC2VOL` block is also reproduced:
 - AO0 limit: +/-1 V
 - AO0 zero command: 0 V
 
-`balance auto` runs a fresh two-limit center operation, confirms the pendulum
-is stationary at its captured downward position, and enables the exact
-reference `Swing_up` branch. The model selects `Swing_up` while
+The first `balance auto` after program startup runs a fresh two-limit center
+operation and remembers that center for the current process. Later
+`balance auto` commands return directly to the remembered center without
+probing both limits again. Each automatic run confirms the pendulum downward
+zero before enabling the exact reference `Swing_up` branch. The model selects `Swing_up` while
 `abs(theta) >= pi/6` and LQR inside that region; it returns to `Swing_up`
 automatically if the pendulum leaves the LQR region. Copied swing-up constants:
 `m=0.134`, `g=9.8`, `l=0.223`, `J=0.0089`, `Gain1=5`, `Gain2=6`, and
@@ -54,7 +56,8 @@ leaves the LQR region.
 
 - active-HIGH left and right physical limits with debounce
 - AO0=0 V before Servo OFF on a limit, monitor fault, exception, Ctrl+C, or exit
-- fresh two-limit `home center` required before every balance session
+- fresh two-limit `home center` on the first automatic run; later automatic
+  runs return to the remembered in-process center
 - balance start restricted to the configured center window
 - software travel envelope stops balance before a physical limit
 - manual Servo, homing, encoder inspection, calibration, and CSV logging remain
@@ -71,7 +74,8 @@ Automatic sequence:
 balance auto
 ```
 
-This performs `home center`, confirms the downward zero, starts reference
+The first command performs `home center`; subsequent commands reuse the
+remembered center. Each run confirms the downward zero, starts reference
 swing-up, and switches to LQR automatically.
 
 Manual-upright sequence:

@@ -1086,9 +1086,23 @@ private:
             notify("Balance control is already running.", true);
             return;
         }
-        notify("Automatic sequence started: fresh two-limit homing, downward-zero confirmation, then reference swing-up.");
-        runHomeOperation(false);
-        if (!homeResultAvailable_.load() || faultLatched_.load() ||
+        const bool rememberedCenter = homeResultAvailable_.load();
+        notify(rememberedCenter
+                   ? "Automatic sequence started: returning to the remembered session center, then reference swing-up."
+                   : "Automatic sequence started: first-run two-limit homing, downward-zero confirmation, then reference swing-up.");
+        bool centered = false;
+        if (rememberedCenter) {
+            centered = runHomeReturn();
+            if (centered) {
+                centered = captureStablePendulumZero(
+                    "post-known-center-return");
+            }
+        } else {
+            runHomeOperation(false);
+            centered = homeResultAvailable_.load();
+        }
+        if (!centered || !homeResultAvailable_.load() ||
+            !pendulumZeroCaptured_.load() || faultLatched_.load() ||
             safety_.stopRequested() || leftTriggered_.load() ||
             rightTriggered_.load()) {
             notify("Automatic sequence aborted before swing-up because homing or safety validation failed.",
@@ -1465,7 +1479,9 @@ private:
                 << ", max_jitter_us=" << balanceMaxJitterMicroseconds_.load()
                 << ", missed_deadlines=" << balanceMissedDeadlines_.load()
                 << ", motor_encoder_feedback=true"
-                << ", fresh_home_center_required=true";
+                << ", first_auto_fresh_home=true"
+                << ", remembered_center_available="
+                << homeResultAvailable_.load();
         notify(message.str());
     }
 
@@ -1584,23 +1600,22 @@ private:
         homingRunning_.store(false);
     }
 
-    void runHomeReturn() {
+    bool runHomeReturn() {
         if (balanceRunning_.load()) {
             notify("Stop balance control before returning to center.", true);
-            return;
+            return false;
         }
         if (!homeResultAvailable_.load()) {
             notify("Home return rejected: run 'home center' once in this process first.", true);
-            return;
+            return false;
         }
-        if (!sampleReady_.load() || faultLatched_.load() ||
-            leftTriggered_.load() || rightTriggered_.load()) {
-            notify("Home return rejected: monitoring, fault, or limit state is unsafe.", true);
-            return;
+        if (!sampleReady_.load() || faultLatched_.load()) {
+            notify("Home return rejected: monitoring or fault state is unsafe.", true);
+            return false;
         }
         if (calibrationRunning_.load() || homingRunning_.exchange(true)) {
             notify("Another calibration or homing operation is already running.", true);
-            return;
+            return false;
         }
         calibrationAbort_.store(false);
         setHomingState("RETURNING_TO_KNOWN_CENTER");
@@ -1629,10 +1644,19 @@ private:
                 },
                 [this](double voltage,
                        pendulum::calibration::LimitSide releaseSide) {
-                    if (leftTriggered_.load() || rightTriggered_.load() ||
-                        releaseSide != pendulum::calibration::LimitSide::None) {
-                        throw std::runtime_error(
-                            "Known-center motion rejected by limit state");
+                    const bool left = leftTriggered_.load();
+                    const bool right = rightTriggered_.load();
+                    if (left && right) {
+                        throw std::runtime_error("Both limits are active");
+                    }
+                    if (left || right) {
+                        const auto activeSide = left
+                            ? pendulum::calibration::LimitSide::Left
+                            : pendulum::calibration::LimitSide::Right;
+                        if (releaseSide != activeSide) {
+                            throw std::runtime_error(
+                                "Known-center motion into an active limit was rejected");
+                        }
                     }
                     std::scoped_lock lock(outputMutex_);
                     if (!servoOn_.load()) {
@@ -1666,6 +1690,8 @@ private:
             setHomingState("RETURN_COMPLETE");
             record(message);
             notify(message);
+            homingRunning_.store(false);
+            return true;
         } catch (const std::exception& error) {
             stopOutputs("known-center return failed");
             const auto message =
@@ -1675,6 +1701,7 @@ private:
             notify(message, true);
         }
         homingRunning_.store(false);
+        return false;
     }
 
     void setHomingState(const std::string& state) {
