@@ -1,5 +1,5 @@
 {
-  "objective": "Keep the existing Copy_of_LQR_lp1_1.slx controller unchanged; make only the first balance auto in each program process measure both limits, then reuse the remembered center for later balance auto commands while retaining limits, Servo, and shutdown safety.",
+  "objective": "Add a recoverable software travel limit to automatic swing-up: do not terminate the run at the software boundary, block only outward motion, and allow inward motion so swing-up can continue, while retaining physical-limit shutdown safety.",
   "reference": {
     "model": "E:\\直线倒立摆库\\demo\\Copy_of_LQR_lp1_1.slx",
     "model_version": "4.37",
@@ -27,7 +27,7 @@
   "preserved": [
     "Physical limit debounce and immediate output shutdown",
     "Servo enable/disable and process-fault shutdown",
-    "Fresh two-limit homing and software travel envelope",
+    "Fresh two-limit homing and physical-limit hard shutdown",
     "First automatic run measures both limits; later automatic runs reuse the remembered in-process center",
     "Encoder monitoring, manual console, and telemetry logging"
   ],
@@ -48,14 +48,16 @@
     "Physical balance behavior cannot be claimed verified until an operator-authorized supervised hardware run is completed."
   ],
   "current_change": {
-    "scope": "Supervisory homing sequence only; the fast Swing_up/LQR/ACC2VOL control path is unchanged.",
-    "baseline": "runAutoBalance always calls fresh two-limit homing even though an in-process center and returnToKnownCenter implementation already exist.",
+    "scope": "Automatic swing-up command conditioning at the calibrated software travel boundary; manual LQR and physical limit behavior remain fail-stop.",
+    "baseline": "The balance loop throws and shuts down whenever the cart reaches maximum_balance_position_fraction, including during automatic swing-up.",
     "acceptance": [
-      "First balance auto performs fresh two-limit homing and stores center geometry.",
-      "Later balance auto returns to the remembered center without probing both limits.",
-      "A failed known-center return aborts before balance starts.",
-      "Physical limits and Servo shutdown behavior remain active."
+      "Automatic swing-up remains active after reaching the 85% software travel boundary.",
+      "Commands farther toward the active software boundary are replaced by zero volts.",
+      "Commands directed inward are passed through so the controller can recover and continue swing-up.",
+      "Command integrators are cleared whenever an outward command is blocked to prevent windup.",
+      "Manual-upright LQR still stops at the software boundary.",
+      "Physical limits still force AO0=0 V and Servo OFF."
     ],
-    "status": "implemented; independent Release build and phase1_tests passed 1/1 on 2026-09-03; hardware motion not run"
+    "status": "implemented; independent full Release build and phase1_tests passed 1/1 on 2026-09-03; hardware motion not authorized and not run"
   }
 }

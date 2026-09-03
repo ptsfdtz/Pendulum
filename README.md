@@ -59,7 +59,10 @@ leaves the LQR region.
 - fresh two-limit `home center` on the first automatic run; later automatic
   runs return to the remembered in-process center
 - balance start restricted to the configured center window
-- software travel envelope stops balance before a physical limit
+- automatic swing-up software travel limit at 85% of calibrated half-travel;
+  outward commands are blocked without ending the run, and inward commands
+  remain available so swing-up can recover and continue
+- manual-upright balance still stops if it reaches the software travel limit
 - manual Servo, homing, encoder inspection, calibration, and CSV logging remain
 
 ## Manual console

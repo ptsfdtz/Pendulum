@@ -20,6 +20,18 @@ struct ReferenceLqrOutput {
     bool swingUpActive{false};
 };
 
+enum class SoftwareTravelLimitSide {
+    None,
+    Left,
+    Right,
+};
+
+struct SoftwareTravelLimitOutput {
+    double outputVoltage{0.0};
+    SoftwareTravelLimitSide side{SoftwareTravelLimitSide::None};
+    bool outwardCommandBlocked{false};
+};
+
 // Exact controller from Copy_of_LQR_lp1_1.slx (model version 4.37). The
 // constants and update ordering match the R2021a generated code. Callers may
 // select the full Swing_up/LQR switch or the manual-upright LQR branch.
@@ -48,9 +60,13 @@ public:
     static constexpr double kSwingPositionLimitMeters = 0.25;
 
     void reset() noexcept;
+    void resetCommandIntegrators() noexcept;
     ReferenceLqrOutput update(std::int64_t pendulumRelativeCounts,
                               std::int64_t cartRelativeCounts,
                               bool enableSwingUp = false);
+    static SoftwareTravelLimitOutput applySoftwareTravelLimit(
+        double outputVoltage, double positionFromCenterHalfTravel,
+        double limitFraction, bool positiveVoltageMovesRight);
 
 private:
     double previousPendulumAngleRadians_{0.0};

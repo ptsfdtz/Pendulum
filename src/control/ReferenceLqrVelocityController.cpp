@@ -37,6 +37,47 @@ void ReferenceLqrVelocityController::reset() noexcept {
     piIntegratorState_ = 0.0;
 }
 
+void ReferenceLqrVelocityController::resetCommandIntegrators() noexcept {
+    previousVelocityIntegratorNotSaturated_ = false;
+    previousVelocityIntegratorOutput_ = 0.0;
+    velocityIntegratorState_ = 0.0;
+    previousPiIntegratorNotSaturated_ = false;
+    previousPiIntegratorOutput_ = 0.0;
+    piIntegratorState_ = 0.0;
+}
+
+SoftwareTravelLimitOutput
+ReferenceLqrVelocityController::applySoftwareTravelLimit(
+    double outputVoltage, double positionFromCenterHalfTravel,
+    double limitFraction, bool positiveVoltageMovesRight) {
+    if (!std::isfinite(outputVoltage) ||
+        !std::isfinite(positionFromCenterHalfTravel) ||
+        !std::isfinite(limitFraction) || limitFraction <= 0.0 ||
+        limitFraction > 1.0) {
+        throw std::invalid_argument("Invalid software travel-limit input");
+    }
+
+    SoftwareTravelLimitOutput result{outputVoltage};
+    if (positionFromCenterHalfTravel >= limitFraction) {
+        result.side = SoftwareTravelLimitSide::Right;
+    } else if (positionFromCenterHalfTravel <= -limitFraction) {
+        result.side = SoftwareTravelLimitSide::Left;
+    } else {
+        return result;
+    }
+
+    const double rightwardVoltageSign = positiveVoltageMovesRight ? 1.0 : -1.0;
+    const double rightwardCommand = outputVoltage * rightwardVoltageSign;
+    const bool pointsOutward =
+        (result.side == SoftwareTravelLimitSide::Right && rightwardCommand > 0.0) ||
+        (result.side == SoftwareTravelLimitSide::Left && rightwardCommand < 0.0);
+    if (pointsOutward) {
+        result.outputVoltage = 0.0;
+        result.outwardCommandBlocked = true;
+    }
+    return result;
+}
+
 ReferenceLqrOutput ReferenceLqrVelocityController::update(
     std::int64_t pendulumRelativeCounts, std::int64_t cartRelativeCounts,
     bool enableSwingUp) {

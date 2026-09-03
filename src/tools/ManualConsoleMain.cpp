@@ -368,9 +368,13 @@ private:
             if (faultLatched_.load()) {
                 motion = "FAULT / OUTPUT DISABLED";
             } else if (balanceRunning_.load()) {
-                motion = balanceSwingUpActive_.load()
-                    ? "AUTO / SWING-UP"
-                    : "BALANCING / LQR";
+                if (balanceSoftwareLimitActive_.load()) {
+                    motion = "AUTO / SOFT-LIMIT RECOVERY";
+                } else {
+                    motion = balanceSwingUpActive_.load()
+                        ? "AUTO / SWING-UP"
+                        : "BALANCING / LQR";
+                }
             } else if (homingRunning_.load()) {
                 std::scoped_lock lock(homingStateMutex_);
                 motion = "HOMING / " + homingState_;
@@ -1147,6 +1151,7 @@ private:
             balanceThread_.join();
         }
         balanceAbort_.store(false);
+        balanceSoftwareLimitActive_.store(false);
         balanceMissedDeadlines_.store(0);
         balanceMaxJitterMicroseconds_.store(0.0);
         const auto referenceSample = latestPendulumSample();
@@ -1286,6 +1291,10 @@ private:
             auto nextControlTime = sample.time + period;
             const auto balanceStartTime = sample.time;
             std::uint64_t sampleIndex = 0;
+            auto previousSoftwareLimitSide =
+                pendulum::control::SoftwareTravelLimitSide::None;
+            const bool positiveVoltageMovesRight =
+                config_.pci1723.positiveVoltageCartDirection == "RIGHT";
             record(std::string("Reference Copy_of_LQR_lp1_1 ") +
                    (automaticSwingUp ? "Swing_up+LQR" : "LQR") +
                    "+ACC2VOL active at 100 Hz; velocity mode; exact fixed gains");
@@ -1337,8 +1346,44 @@ private:
                         "pendulum left the reference LQR region; swing-up is disabled");
                 }
                 const auto cartSafety = currentCartSessionState(0.0);
-                if (std::abs(cartSafety.positionFromCenterHalfTravel) >=
-                    settings.maximumBalancePositionFraction) {
+                auto softwareLimit =
+                    pendulum::control::SoftwareTravelLimitOutput{
+                        output.outputVoltage};
+                if (automaticSwingUp) {
+                    softwareLimit = Controller::applySoftwareTravelLimit(
+                        output.outputVoltage,
+                        cartSafety.positionFromCenterHalfTravel,
+                        settings.maximumBalancePositionFraction,
+                        positiveVoltageMovesRight);
+                    balanceSoftwareLimitActive_.store(
+                        softwareLimit.side !=
+                        pendulum::control::SoftwareTravelLimitSide::None);
+                    if (softwareLimit.side != previousSoftwareLimitSide) {
+                        if (softwareLimit.side ==
+                            pendulum::control::SoftwareTravelLimitSide::None) {
+                            record("Swing-up software limit cleared; normal command resumed");
+                            notify("Swing-up recovered inside the software travel limit; continuing.");
+                        } else {
+                            const char* side =
+                                softwareLimit.side ==
+                                        pendulum::control::SoftwareTravelLimitSide::Left
+                                    ? "LEFT"
+                                    : "RIGHT";
+                            record(std::string("Swing-up software limit reached: ") +
+                                   side +
+                                   "; outward commands blocked, run remains active",
+                                   pendulum::logging::Level::Warning);
+                            notify(std::string("Swing-up software limit: ") + side +
+                                   "; attempting inward recovery without stopping.",
+                                   true);
+                        }
+                        previousSoftwareLimitSide = softwareLimit.side;
+                    }
+                    if (softwareLimit.outwardCommandBlocked) {
+                        controller.resetCommandIntegrators();
+                    }
+                } else if (std::abs(cartSafety.positionFromCenterHalfTravel) >=
+                           settings.maximumBalancePositionFraction) {
                     throw std::runtime_error(
                         "cart exceeded the session-center software travel envelope");
                 }
@@ -1349,8 +1394,8 @@ private:
                         rightTriggered_.load()) {
                         throw std::runtime_error("balance output interrupted");
                     }
-                    analogOutput_.writeVoltage(output.outputVoltage);
-                    commandedVoltage_.store(output.outputVoltage);
+                    analogOutput_.writeVoltage(softwareLimit.outputVoltage);
+                    commandedVoltage_.store(softwareLimit.outputVoltage);
                 }
 
                 const double angleDegrees =
@@ -1379,7 +1424,8 @@ private:
                 maximumAngleErrorDegrees = std::max(
                     maximumAngleErrorDegrees, std::abs(angleDegrees));
                 maximumOutputVoltage = std::max(
-                    maximumOutputVoltage, std::abs(output.outputVoltage));
+                    maximumOutputVoltage,
+                    std::abs(softwareLimit.outputVoltage));
 
                 if (++sampleIndex % settings.telemetryDivider == 0) {
                     std::ostringstream telemetry;
@@ -1414,7 +1460,13 @@ private:
                               << output.velocityErrorMetersPerSecond
                               << ",pi_p_v=" << output.proportionalVoltage
                               << ",pi_i_v=" << output.integralVoltage
-                              << ",ao_v=" << output.outputVoltage
+                              << ",controller_ao_v=" << output.outputVoltage
+                              << ",ao_v=" << softwareLimit.outputVoltage
+                              << ",software_limit_active="
+                              << (softwareLimit.side !=
+                                  pendulum::control::SoftwareTravelLimitSide::None)
+                              << ",software_limit_outward_blocked="
+                              << softwareLimit.outwardCommandBlocked
                               << ",jitter_us=" << jitterUs;
                     logger_.log(pendulum::logging::Level::Info,
                                 "BalanceTelemetry", telemetry.str());
@@ -1430,6 +1482,7 @@ private:
         }
         stopOutputs("balance loop exit");
         balanceSwingUpActive_.store(false);
+        balanceSoftwareLimitActive_.store(false);
         balanceRunning_.store(false);
         const double stableTimeSeconds = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - statisticsStart).count();
@@ -1459,6 +1512,8 @@ private:
                 << ", controller=Copy_of_LQR_lp1_1_LQR_ACC2VOL"
                 << ", automatic_mode=" << balanceAutoMode_.load()
                 << ", swing_up_active=" << balanceSwingUpActive_.load()
+                << ", software_limit_active="
+                << balanceSoftwareLimitActive_.load()
                 << ", drive=" << config_.balanceControl.driveModel
                 << ", mode=" << config_.balanceControl.driveControlMode
                 << ", control_period_s=0.01"
@@ -1829,6 +1884,7 @@ private:
     std::atomic<bool> balanceAbort_{false};
     std::atomic<bool> balanceAutoMode_{false};
     std::atomic<bool> balanceSwingUpActive_{false};
+    std::atomic<bool> balanceSoftwareLimitActive_{false};
     std::atomic<std::uint64_t> balanceRunId_{0};
     std::atomic<bool> pendulumZeroCaptured_{false};
     std::atomic<bool> servoOn_{false};

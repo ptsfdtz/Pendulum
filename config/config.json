@@ -6,7 +6,7 @@
     "downward_zero_maximum_span_counts": 8,
     "downward_zero_settle_timeout_seconds": 20.0,
     "frequency_hz": 100,
-    "maximum_balance_position_fraction": 1,
+    "maximum_balance_position_fraction": 0.85,
     "maximum_balance_angle_radians": 0.5235987755982988,
     "maximum_balance_start_position_fraction": 0.1,
     "pendulum_counts_per_revolution": 8000,

@@ -75,7 +75,7 @@ void testDefaultConfig(const std::filesystem::path& path) {
                      std::numbers::pi / 6.0) < 1e-12,
             "manual-upright LQR region mismatch");
     require(config.balanceControl.maximumBalanceStartPositionFraction == 0.1 &&
-                config.balanceControl.maximumBalancePositionFraction == 1.0,
+                config.balanceControl.maximumBalancePositionFraction == 0.85,
             "cart safety envelope mismatch");
 
     bool rejected = false;
@@ -176,6 +176,34 @@ void testReferenceLqrVelocityController() {
                 manualOutsideRegion.accelerationCommandMetersPerSecondSquared ==
                     manualOutsideRegion.lqrAccelerationMetersPerSecondSquared,
             "manual-upright branch must remain LQR-only");
+
+    const auto rightBlocked = Controller::applySoftwareTravelLimit(
+        0.4, 0.85, 0.85, true);
+    require(rightBlocked.side ==
+                pendulum::control::SoftwareTravelLimitSide::Right &&
+                rightBlocked.outwardCommandBlocked &&
+                rightBlocked.outputVoltage == 0.0,
+            "right software limit did not block an outward command");
+    const auto rightRecovery = Controller::applySoftwareTravelLimit(
+        -0.4, 0.90, 0.85, true);
+    require(rightRecovery.side ==
+                pendulum::control::SoftwareTravelLimitSide::Right &&
+                !rightRecovery.outwardCommandBlocked &&
+                rightRecovery.outputVoltage == -0.4,
+            "right software limit blocked an inward recovery command");
+    const auto leftBlockedReversedPolarity =
+        Controller::applySoftwareTravelLimit(0.4, -0.90, 0.85, false);
+    require(leftBlockedReversedPolarity.side ==
+                pendulum::control::SoftwareTravelLimitSide::Left &&
+                leftBlockedReversedPolarity.outwardCommandBlocked &&
+                leftBlockedReversedPolarity.outputVoltage == 0.0,
+            "software limit did not honor the configured motor polarity");
+    const auto insideEnvelope = Controller::applySoftwareTravelLimit(
+        0.4, 0.84, 0.85, true);
+    require(insideEnvelope.side ==
+                pendulum::control::SoftwareTravelLimitSide::None &&
+                insideEnvelope.outputVoltage == 0.4,
+            "software limit changed a command inside the envelope");
 }
 
 void testSafetyOrderAndFaultContainment() {
