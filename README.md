@@ -7,21 +7,21 @@ Windows C++ controller for a single-stage linear inverted pendulum using:
 
 ## Balance controller
 
-The live balance path is the manual-upright branch of
-`E:\直线倒立摆库\demo\Copy_of_LQR_lp1_1.slx` (model version 4.37).
-The previous PD/LQR controllers and offline gain-learning tools have been removed.
+The live balance path is the complete controller from
+`E:\直线倒立摆库\demo\Copy_of_LQR_lp1_1.slx` (model version 4.37). The previous
+PD/LQR controllers and offline gain-learning tools have been removed.
 
-The implementation preserves the reference model's signs, constants, unit-delay
-initial conditions, saturation behavior, and update ordering:
+The implementation preserves the reference model's signs, constants,
+unit-delay initial conditions, saturation behavior, and update ordering:
 
 ```text
-theta = wrap(-(pendulum_count - start_count) * 2*pi/8000)
-x     = -(motor_count - start_count) * 0.163/8000
+theta = wrap(-(pendulum_count - upright_count) * 2*pi/8000)
+x     = -(motor_count - center_count) * 0.163/8000
 
 theta_dot = (theta - theta_previous) / 0.01
 x_dot     = (x - x_previous) / 0.01
 
-acc = clamp(
+lqr_acc = clamp(
     -58.6*theta
     -10.69*theta_dot
     +10*x
@@ -33,25 +33,31 @@ The reference `ACC2VOL` block is also reproduced:
 
 - control update: 0.01 s
 - integrator multiplier `Ts`: 0.005 s, exactly as stored in the model
-- velocity reference limit: ±0.6 m/s
+- velocity reference limit: +/-0.6 m/s
 - velocity PI: P=0.18, I=54
-- AO0 limit: ±1 V
+- AO0 limit: +/-1 V
 - AO0 zero command: 0 V
 
-Automatic `Swing_up` is intentionally disabled for this stage. The operator
-must hold the pendulum within ±30 degrees of upright before `balance start`.
-The controller stops if the pendulum leaves that LQR region.
+`balance auto` runs a fresh two-limit center operation, confirms the pendulum
+is stationary at its captured downward position, and enables the exact
+reference `Swing_up` branch. The model selects `Swing_up` while
+`abs(theta) >= pi/6` and LQR inside that region; it returns to `Swing_up`
+automatically if the pendulum leaves the LQR region. Copied swing-up constants:
+`m=0.134`, `g=9.8`, `l=0.223`, `J=0.0089`, `Gain1=5`, `Gain2=6`, and
+`PositionLimit=0.25`.
+
+`balance start` remains the manual-upright mode. Hold the pendulum within
++/-30 degrees of upright before starting it. This mode stops when the pendulum
+leaves the LQR region.
 
 ## Safety retained
-
-The controller remains wrapped by the existing independent safety system:
 
 - active-HIGH left and right physical limits with debounce
 - AO0=0 V before Servo OFF on a limit, monitor fault, exception, Ctrl+C, or exit
 - fresh two-limit `home center` required before every balance session
 - balance start restricted to the configured center window
 - software travel envelope stops balance before a physical limit
-- manual Servo, homing, encoder inspection, calibration, and CSV logging remain available
+- manual Servo, homing, encoder inspection, calibration, and CSV logging remain
 
 ## Manual console
 
@@ -59,7 +65,16 @@ The controller remains wrapped by the existing independent safety system:
 powershell -ExecutionPolicy Bypass -File .\scripts\start_manual_console.ps1
 ```
 
-Normal commissioning sequence:
+Automatic sequence:
+
+```text
+balance auto
+```
+
+This performs `home center`, confirms the downward zero, starts reference
+swing-up, and switches to LQR automatically.
+
+Manual-upright sequence:
 
 ```text
 home center
@@ -79,6 +94,7 @@ home measure
 home center
 home return
 balance zero
+balance auto
 balance start
 balance stop
 balance status

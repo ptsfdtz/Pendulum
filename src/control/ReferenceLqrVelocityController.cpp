@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <stdexcept>
 
@@ -26,6 +27,7 @@ bool oppositeNonPositiveSigns(double previousValue, double input) {
 
 void ReferenceLqrVelocityController::reset() noexcept {
     previousPendulumAngleRadians_ = 0.0;
+    previousEncoderAngleRadians_ = 0.0;
     previousCartPositionMeters_ = 0.0;
     previousVelocityIntegratorNotSaturated_ = false;
     previousVelocityIntegratorOutput_ = 0.0;
@@ -36,7 +38,8 @@ void ReferenceLqrVelocityController::reset() noexcept {
 }
 
 ReferenceLqrOutput ReferenceLqrVelocityController::update(
-    std::int64_t pendulumRelativeCounts, std::int64_t cartRelativeCounts) {
+    std::int64_t pendulumRelativeCounts, std::int64_t cartRelativeCounts,
+    bool enableSwingUp) {
     constexpr double radiansPerCount =
         2.0 * std::numbers::pi /
         static_cast<double>(kEncoderCountsPerRevolution);
@@ -45,9 +48,10 @@ ReferenceLqrOutput ReferenceLqrVelocityController::update(
         static_cast<double>(kEncoderCountsPerRevolution);
 
     ReferenceLqrOutput output;
+    const double encoderAngleRadians =
+        static_cast<double>(pendulumRelativeCounts) * radiansPerCount;
     // Reference model: theta = wrap(0 - encoder1 * 2*pi/8000).
-    output.pendulumAngleRadians = wrapToPi(
-        -static_cast<double>(pendulumRelativeCounts) * radiansPerCount);
+    output.pendulumAngleRadians = wrapToPi(-encoderAngleRadians);
     // Reference model: x = encoder2 * (-1) * 0.163/8000.
     output.cartPositionMeters =
         -static_cast<double>(cartRelativeCounts) * cartMetersPerCount;
@@ -64,8 +68,46 @@ ReferenceLqrOutput ReferenceLqrVelocityController::update(
             output.pendulumAngularRateRadiansPerSecond +
         kCartPositionGain * output.cartPositionMeters +
         kCartVelocityGain * output.cartVelocityMetersPerSecond;
-    output.accelerationCommandMetersPerSecondSquared = std::clamp(
+    output.lqrAccelerationMetersPerSecondSquared = std::clamp(
         lqrAcceleration, -kAccelerationLimit, kAccelerationLimit);
+
+    // Exact ETlabLibrary/Swing_up branch from the generated R2021a code.
+    const double encoderAngleDelta =
+        encoderAngleRadians - previousEncoderAngleRadians_;
+    const double targetEnergy =
+        2.0 * kSwingMassKilograms * kGravityMetersPerSecondSquared *
+        kPendulumLengthMeters;
+    const double measuredEnergy =
+        kSwingMassKilograms * kGravityMetersPerSecondSquared *
+            kPendulumLengthMeters * (1.0 - std::cos(encoderAngleRadians)) +
+        kPendulumInertia / 0.0002 *
+            (encoderAngleDelta * encoderAngleDelta);
+    const double energyError = targetEnergy - measuredEnergy;
+    const double signInput =
+        std::cos(encoderAngleRadians) * encoderAngleDelta * energyError;
+    double signValue = 0.0;
+    if (signInput < 0.0) {
+        signValue = -1.0;
+    } else if (signInput > 0.0) {
+        signValue = 1.0;
+    } else if (signInput != 0.0) {
+        signValue = std::numeric_limits<double>::quiet_NaN();
+    }
+    const double swingEnergyTerm = -kSwingEnergyGain * signValue;
+    const double swingPositionTerm =
+        std::log(1.0 - 0.8 / kSwingPositionLimitMeters *
+                           std::abs(output.cartPositionMeters)) *
+        output.cartPositionMeters * kSwingPositionGain;
+    output.swingUpAccelerationMetersPerSecondSquared = std::clamp(
+        swingPositionTerm - swingEnergyTerm,
+        -kAccelerationLimit, kAccelerationLimit);
+    output.swingUpActive =
+        enableSwingUp &&
+        std::abs(output.pendulumAngleRadians) >= kSwitchAngleRadians;
+    output.accelerationCommandMetersPerSecondSquared =
+        output.swingUpActive
+            ? output.swingUpAccelerationMetersPerSecondSquared
+            : output.lqrAccelerationMetersPerSecondSquared;
 
     // Exact ACC2VOL velocity-reference integrator and clamp logic.
     const double velocityIntegratorGain =
@@ -110,6 +152,7 @@ ReferenceLqrOutput ReferenceLqrVelocityController::update(
     }
 
     previousPendulumAngleRadians_ = output.pendulumAngleRadians;
+    previousEncoderAngleRadians_ = encoderAngleRadians;
     previousCartPositionMeters_ = output.cartPositionMeters;
     previousVelocityIntegratorNotSaturated_ =
         output.velocityReferenceMetersPerSecond == velocityIntegratorOutput;

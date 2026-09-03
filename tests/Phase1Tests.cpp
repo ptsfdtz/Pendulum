@@ -75,7 +75,7 @@ void testDefaultConfig(const std::filesystem::path& path) {
                      std::numbers::pi / 6.0) < 1e-12,
             "manual-upright LQR region mismatch");
     require(config.balanceControl.maximumBalanceStartPositionFraction == 0.1 &&
-                config.balanceControl.maximumBalancePositionFraction == 0.85,
+                config.balanceControl.maximumBalancePositionFraction == 1.0,
             "cart safety envelope mismatch");
 
     bool rejected = false;
@@ -147,6 +147,35 @@ void testReferenceLqrVelocityController() {
                     saturated.outputVoltage <= 1.0,
                 "reference controller saturation mismatch");
     }
+
+    controller.reset();
+    const auto firstDownwardAuto = controller.update(-4000, 0, true);
+    require(firstDownwardAuto.swingUpActive &&
+                std::abs(firstDownwardAuto.swingUpAccelerationMetersPerSecondSquared +
+                         5.0) < 1e-12 &&
+                std::abs(firstDownwardAuto.accelerationCommandMetersPerSecondSquared +
+                         5.0) < 1e-12 &&
+                firstDownwardAuto.outputVoltage == 0.0,
+            "reference first swing-up tick mismatch");
+
+    const auto stationaryDownwardAuto = controller.update(-4000, 0, true);
+    require(stationaryDownwardAuto.swingUpActive &&
+                stationaryDownwardAuto.swingUpAccelerationMetersPerSecondSquared == 0.0,
+            "reference stationary-down swing-up state mismatch");
+
+    controller.reset();
+    const auto nearUprightAuto = controller.update(100, 0, true);
+    require(!nearUprightAuto.swingUpActive &&
+                nearUprightAuto.accelerationCommandMetersPerSecondSquared ==
+                    nearUprightAuto.lqrAccelerationMetersPerSecondSquared,
+            "reference Swing_up-to-LQR switch mismatch");
+
+    controller.reset();
+    const auto manualOutsideRegion = controller.update(-4000, 0, false);
+    require(!manualOutsideRegion.swingUpActive &&
+                manualOutsideRegion.accelerationCommandMetersPerSecondSquared ==
+                    manualOutsideRegion.lqrAccelerationMetersPerSecondSquared,
+            "manual-upright branch must remain LQR-only");
 }
 
 void testSafetyOrderAndFaultContainment() {

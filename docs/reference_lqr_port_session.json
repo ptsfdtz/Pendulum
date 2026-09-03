@@ -1,5 +1,5 @@
 {
-  "objective": "Replace all project-owned balance algorithms with the manual-upright control path from Copy_of_LQR_lp1_1.slx while retaining limits, Servo, homing, and shutdown safety.",
+  "objective": "Use the complete Copy_of_LQR_lp1_1.slx controller, including automatic swing-up and LQR switching through balance auto, while retaining limits, Servo, homing, and shutdown safety.",
   "reference": {
     "model": "E:\\直线倒立摆库\\demo\\Copy_of_LQR_lp1_1.slx",
     "model_version": "4.37",
@@ -10,7 +10,8 @@
   "known": [
     "The physical plant is the same plant used by the reference model.",
     "The Yaskawa drive has been switched to analog velocity control.",
-    "Automatic swing-up is deferred; the pendulum will be manually placed upright."
+    "balance start retains manual-upright operation.",
+    "balance auto must home the cart, confirm the downward state, swing up, and switch automatically."
   ],
   "implemented": [
     "Reference encoder signs and scales",
@@ -18,6 +19,8 @@
     "Acceleration saturation at +/-10",
     "ACC2VOL velocity-reference integration and clamp",
     "ACC2VOL P=0.18, I=54 and generated-code state ordering",
+    "Swing_up m=0.134, g=9.8, l=0.223, J=0.0089, Gain1=5, Gain2=6, position limit=0.25",
+    "Reference abs(theta)>=pi/6 Swing_up/LQR switching",
     "Velocity limit +/-0.6 m/s and AO limit +/-1 V",
     "100 Hz scheduled control over the existing faster safety monitor"
   ],
@@ -35,8 +38,8 @@
     "Operator gain optimizer and runtime gain mutation"
   ],
   "acceptance_tests": {
-    "build": "Release build passed on 2026-09-03",
-    "unit_tests": "ctest release passed 1/1 on 2026-09-03",
+    "build": "Release build passed after full Swing_up integration on 2026-09-03",
+    "unit_tests": "ctest release passed 1/1, including exact first swing tick and Swing_up/LQR switching, on 2026-09-03",
     "device_enumeration": "Passed; Dev1 PCI-6602 and PCI-1723,BID#15 detected; no output tasks created",
     "hardware_motion": "not authorized and not run"
   },
