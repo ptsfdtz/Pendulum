@@ -108,32 +108,16 @@ struct HomeCenterConfig {
 
 struct BalanceControlConfig {
     std::string driveModel{"SGD7S-180A00A002"};
-    std::string driveControlMode{"ANALOG_TORQUE"};
-    std::uint32_t pn400Setting{30};
-    double ratedTorqueCommandVoltage{3.0};
-    double analogTorqueZeroVoltage{-0.00135};
-    bool analogTorqueZeroCalibrated{false};
-    std::uint32_t frequencyHz{500};
+    std::string driveControlMode{"ANALOG_VELOCITY"};
+    std::uint32_t frequencyHz{100};
     std::uint32_t pendulumPulsesPerRevolution{2000};
     std::uint32_t pendulumCountsPerRevolution{8000};
     double downwardZeroCaptureSeconds{1.5};
     double downwardZeroSettleTimeoutSeconds{20.0};
     std::int64_t downwardZeroMaximumSpanCounts{8};
-    double angularRateFilterAlpha{0.15};
-    double angleGainPercentAtMaximumAngle{10.0};
-    double angularRateGainPercentAtMaximumRate{20.0};
-    double maximumBalanceAngularRateDegreesPerSecond{57.3};
-    double angleRelayBoostRatedTorqueFraction{0.0};
-    std::int64_t angleRelayBoostDeadbandCounts{12};
-    double maximumBalanceAngleRadians{0.25};
-    double cartPositionGainRatedTorquePerHalfTravel{0.02};
-    double cartVelocityGainRatedTorquePerHalfTravelPerSecond{0.01};
-    double cartIntegralGainRatedTorquePerHalfTravelSecond{0.002};
-    double maximumAbsoluteCartRatedTorqueFraction{0.05};
+    double maximumBalanceAngleRadians{0.52359877559829882};
     double maximumBalanceStartPositionFraction{0.10};
     double maximumBalancePositionFraction{0.85};
-    int defaultPolarity{1};
-    double maximumAbsoluteRatedTorqueFraction{1.0};
     std::uint32_t telemetryDivider{10};
 };
 

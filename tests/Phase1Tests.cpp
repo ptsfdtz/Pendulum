@@ -2,9 +2,7 @@
 #include "pendulum/calibration/MotorEncoderCalibration.h"
 #include "pendulum/calibration/MotorZeroCalibrator.h"
 #include "pendulum/config/Config.h"
-#include "pendulum/control/AnglePdController.h"
-#include "pendulum/control/LqrController.h"
-#include "pendulum/control/PendulumStateEstimator.h"
+#include "pendulum/control/ReferenceLqrVelocityController.h"
 #include "pendulum/safety/SafetyManager.h"
 
 #include <nlohmann/json.hpp>
@@ -69,43 +67,16 @@ void testDefaultConfig(const std::filesystem::path& path) {
             "pendulum X4 counts/rev mismatch");
     require(config.balanceControl.driveModel == "SGD7S-180A00A002",
             "servo drive model mismatch");
-    require(config.balanceControl.driveControlMode == "ANALOG_TORQUE",
+    require(config.balanceControl.driveControlMode == "ANALOG_VELOCITY",
             "servo drive control mode mismatch");
-    require(config.balanceControl.pn400Setting == 30 &&
-                config.balanceControl.ratedTorqueCommandVoltage == 3.0,
-            "SGD7S Pn400 torque scaling mismatch");
-    require(std::abs(config.balanceControl.analogTorqueZeroVoltage -
-                     (-0.00135)) < 1e-15,
-            "analog torque zero calibration mismatch");
-    require(std::abs(config.balanceControl.angleGainPercentAtMaximumAngle -
-                     30.0) < 1e-15,
-            "angle PD rated-torque proportional gain mismatch");
-    require(std::abs(
-                config.balanceControl.angularRateGainPercentAtMaximumRate -
-                5.0) < 1e-15 &&
-                config.balanceControl.maximumBalanceAngularRateDegreesPerSecond == 57.3,
-            "angle PD rated-torque derivative gain mismatch");
-    require(config.balanceControl.angleRelayBoostRatedTorqueFraction == 0.0 &&
-                config.balanceControl.angleRelayBoostDeadbandCounts == 12 &&
-                std::abs(config.balanceControl.maximumBalanceAngleRadians -
-                         0.08726646259971647) < 1e-15,
-            "angle relay boost settings mismatch");
-    require(config.balanceControl.cartPositionGainRatedTorquePerHalfTravel == 0.03 &&
-                config.balanceControl.cartVelocityGainRatedTorquePerHalfTravelPerSecond == 0.18 &&
-                config.balanceControl.cartIntegralGainRatedTorquePerHalfTravelSecond == 0.0 &&
-                config.balanceControl.maximumAbsoluteCartRatedTorqueFraction == 0.05,
-            "cart-centering gains mismatch");
+    require(config.balanceControl.frequencyHz == 100,
+            "reference control frequency mismatch");
+    require(std::abs(config.balanceControl.maximumBalanceAngleRadians -
+                     std::numbers::pi / 6.0) < 1e-12,
+            "manual-upright LQR region mismatch");
     require(config.balanceControl.maximumBalanceStartPositionFraction == 0.1 &&
                 config.balanceControl.maximumBalancePositionFraction == 0.85,
-            "cart-centering safety envelope mismatch");
-    require(std::abs(config.balanceControl.maximumAbsoluteRatedTorqueFraction *
-                         config.balanceControl.ratedTorqueCommandVoltage -
-                     3.0) < 1e-15,
-            "authorized torque ceiling must map to 3.0 V");
-    require(config.balanceControl.analogTorqueZeroCalibrated,
-            "completed SGD7S Fn009 calibration must be recorded");
-    require(config.balanceControl.defaultPolarity == 1,
-            "default balance polarity mismatch");
+            "cart safety envelope mismatch");
 
     bool rejected = false;
     try {
@@ -117,128 +88,65 @@ void testDefaultConfig(const std::filesystem::path& path) {
     config.validateForManualConsole();
 }
 
-void testPendulumStateEstimator() {
-    using namespace std::chrono_literals;
-    using pendulum::control::PendulumStateEstimator;
+void testReferenceLqrVelocityController() {
+    using Controller = pendulum::control::ReferenceLqrVelocityController;
+    Controller controller;
+    controller.reset();
 
-    const auto start = std::chrono::steady_clock::time_point{};
-    PendulumStateEstimator estimator(8000, 0.0);
-    estimator.reset(100, 100, start);
+    const auto zero = controller.update(0, 0);
+    require(zero.outputVoltage == 0.0 &&
+                zero.velocityReferenceMetersPerSecond == 0.0,
+            "reference controller zero-state output mismatch");
 
-    const auto quarterTurn = estimator.update(2100, start + 10ms);
-    require(std::abs(quarterTurn.pendulumAngleRadians -
-                     std::numbers::pi / 2.0) < 1e-12,
-            "2000 X4 pendulum quarter-turn conversion is wrong");
-    require(quarterTurn.cartPositionMeters == 0.0 &&
-                quarterTurn.cartVelocityMetersPerSecond == 0.0,
-            "untrusted cart encoder must not enter the balance state");
+    const auto negativeAfterModelTick = controller.update(-1, 0);
+    require(negativeAfterModelTick.velocityReferenceMetersPerSecond < 0.0 &&
+                negativeAfterModelTick.outputVoltage < 0.0,
+            "reference t=0 state update ordering mismatch");
 
-    estimator.reset(0, 3990, start);
-    const auto wrapped = estimator.update(4010, start + 10ms);
-    require(std::abs(wrapped.pendulumAngleRadians +
-                     3990.0 * (2.0 * std::numbers::pi / 8000.0)) < 1e-12,
-            "pendulum revolution wrapping is wrong");
-    require(std::abs(wrapped.pendulumAngularRateRadiansPerSecond -
-                     20.0 * (2.0 * std::numbers::pi / 8000.0) / 0.01) < 1e-9,
-            "pendulum angular-rate rollover handling is wrong");
-    require(std::abs(wrapped.pendulumAngularRateRawDegreesPerSecond - 90.0) < 1e-9 &&
-                std::abs(wrapped.pendulumAngularRateFilteredDegreesPerSecond - 90.0) < 1e-9,
-            "degree-based raw/filtered angular rate is wrong");
+    controller.reset();
+    const auto firstNegativeAcceleration = controller.update(-1, 0);
+    require(firstNegativeAcceleration.velocityReferenceMetersPerSecond == 0.0 &&
+                firstNegativeAcceleration.outputVoltage == 0.0,
+            "reference first-step clamp state mismatch");
 
-    PendulumStateEstimator filteredEstimator(8000, 0.9);
-    filteredEstimator.reset(0, 0, start);
-    const auto filtered = filteredEstimator.update(20, start + 10ms);
-    require(std::abs(filtered.pendulumAngularRateRawDegreesPerSecond - 90.0) < 1e-9 &&
-                std::abs(filtered.pendulumAngularRateFilteredDegreesPerSecond - 9.0) < 1e-9,
-            "alpha=0.9 low-pass formula is wrong");
+    controller.reset();
 
-    require(PendulumStateEstimator::stableRepresentative(
-                {100, 101, 99, 100, 102}, 3) == 100,
-            "stable pendulum median is wrong");
-    bool unstableRejected = false;
-    try {
-        static_cast<void>(PendulumStateEstimator::stableRepresentative(
-            {100, 101, 120, 99}, 8));
-    } catch (const std::runtime_error&) {
-        unstableRejected = true;
+    const auto onePendulumCount = controller.update(1, 0);
+    const double theta = -2.0 * std::numbers::pi / 8000.0;
+    const double omega = theta / 0.01;
+    const double acceleration =
+        std::clamp(-58.6 * theta - 10.69 * omega, -10.0, 10.0);
+    const double velocityReference = 0.005 * acceleration;
+    const double integralVoltage = 0.005 * velocityReference * 54.0;
+    const double expectedVoltage =
+        std::clamp(0.18 * velocityReference + integralVoltage, -1.0, 1.0);
+    require(std::abs(onePendulumCount.pendulumAngleRadians - theta) < 1e-15 &&
+                std::abs(onePendulumCount.accelerationCommandMetersPerSecondSquared -
+                         acceleration) < 1e-12 &&
+                std::abs(onePendulumCount.velocityReferenceMetersPerSecond -
+                         velocityReference) < 1e-12 &&
+                std::abs(onePendulumCount.outputVoltage - expectedVoltage) < 1e-12,
+            "reference generated-code sequence mismatch");
+
+    controller.reset();
+    const auto cartCount = controller.update(0, 1);
+    const double x = -0.163 / 8000.0;
+    const double velocity = x / 0.01;
+    require(std::abs(cartCount.cartPositionMeters - x) < 1e-15 &&
+                std::abs(cartCount.cartVelocityMetersPerSecond - velocity) < 1e-15,
+            "reference cart encoder sign or scaling mismatch");
+
+    controller.reset();
+    for (int index = 0; index < 200; ++index) {
+        const auto saturated = controller.update(1000, 0);
+        require(saturated.accelerationCommandMetersPerSecondSquared >= -10.0 &&
+                    saturated.accelerationCommandMetersPerSecondSquared <= 10.0 &&
+                    saturated.velocityReferenceMetersPerSecond >= -0.6 &&
+                    saturated.velocityReferenceMetersPerSecond <= 0.6 &&
+                    saturated.outputVoltage >= -1.0 &&
+                    saturated.outputVoltage <= 1.0,
+                "reference controller saturation mismatch");
     }
-    require(unstableRejected,
-            "moving pendulum was accepted as a downward-zero reference");
-}
-
-void testLqrController() {
-    const std::array<double, 4> gain{
-        -8.64300038337, -9.87359066719, 56.8336991347, 11.2867668306};
-    pendulum::control::LqrController controller(gain, 10.0);
-    pendulum::control::State state;
-    state.pendulumAngleRadians = 0.1;
-    require(std::abs(controller.update(state) + 5.68336991347) < 1e-10,
-            "LQR angle feedback output is wrong");
-
-    state.pendulumAngleRadians = 1.0;
-    require(controller.update(state) == -10.0,
-            "LQR output clamp is wrong");
-}
-
-void testAnglePdController() {
-    pendulum::control::AnglePdController controller(
-        25.0, 2.0, 1.0, 1.0, 1.0);
-    pendulum::control::State state;
-    state.pendulumAngleRadians = 0.1;
-    state.pendulumAngularRateRadiansPerSecond = 1.0;
-    state.pendulumAngleDegrees = 0.1;
-    state.pendulumAngularRateFilteredDegreesPerSecond = 1.0;
-    require(std::abs(controller.ratedTorqueFraction(state, 1) - 0.045) < 1e-12,
-            "angle PD rated-torque output is wrong");
-    const auto percentageOutput = controller.update(state, 1);
-    require(std::abs(percentageOutput.proportionalTermPercent - 2.5) < 1e-12 &&
-                std::abs(percentageOutput.derivativeTermPercent - 2.0) < 1e-12,
-            "angle PD percentage terms are wrong");
-    require(std::abs(controller.ratedTorqueFraction(state, -1) + 0.045) < 1e-12,
-            "angle PD polarity reversal is wrong");
-
-    state.pendulumAngleRadians = 1.0;
-    state.pendulumAngularRateRadiansPerSecond = 0.0;
-    state.pendulumAngleDegrees = 1.0;
-    state.pendulumAngularRateFilteredDegreesPerSecond = 0.0;
-    require(std::abs(controller.ratedTorqueFraction(state, 1) - 0.25) < 1e-12,
-            "angle PD output below the 50% clamp is wrong");
-    state.pendulumAngleRadians = 20.0;
-    state.pendulumAngleDegrees = 20.0;
-    require(controller.ratedTorqueFraction(state, 1) == 1.0,
-            "angle PD 100% rated-torque clamp is wrong");
-
-    pendulum::control::AnglePdController cartController(
-        0.0, 0.0, 1.0, 1.0, 1.0, 0.1, 0.2, 0.3, 0.5);
-    pendulum::control::CartCenteringFeedback cart;
-    cart.positionHalfTravel = 0.2;
-    cart.velocityHalfTravelPerSecond = 0.1;
-    cart.samplePeriodSeconds = 1.0;
-    const auto first = cartController.update({}, 1, cart);
-    require(std::abs(first.cartRatedTorqueFraction - 0.1) < 1e-12,
-            "cart PID feedback output is wrong");
-    cart.positionHalfTravel = 0.0;
-    cart.velocityHalfTravelPerSecond = 0.0;
-    const auto second = cartController.update({}, 1, cart);
-    require(std::abs(second.cartRatedTorqueFraction - 0.06) < 1e-12,
-            "cart integral feedback did not retain the centering bias");
-
-    pendulum::control::AnglePdController relayController(
-        0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.45, 0.01);
-    state.pendulumAngleRadians = -0.02;
-    auto relay = relayController.update(state, 1);
-    require(relay.angleRelayBoostRatedTorqueFraction == -0.45 &&
-                relay.totalRatedTorqueFraction == -0.45,
-            "relay boost below the target has the wrong direction");
-    state.pendulumAngleRadians = 0.02;
-    relay = relayController.update(state, 1);
-    require(relay.angleRelayBoostRatedTorqueFraction == 0.45 &&
-                relay.totalRatedTorqueFraction == 0.45,
-            "relay boost above the target did not reverse");
-    state.pendulumAngleRadians = 0.005;
-    relay = relayController.update(state, 1);
-    require(relay.angleRelayBoostRatedTorqueFraction == 0.0,
-            "relay boost remained active inside the deadband");
 }
 
 void testSafetyOrderAndFaultContainment() {
@@ -645,9 +553,7 @@ int main(int argc, char* argv[]) {
     }
     try {
         testDefaultConfig(argv[1]);
-        testPendulumStateEstimator();
-        testLqrController();
-        testAnglePdController();
+        testReferenceLqrVelocityController();
         testSafetyOrderAndFaultContainment();
         testEncoderRolloverAndCalibration();
         testMotorZeroSelectionMath();

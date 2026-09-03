@@ -1,0 +1,46 @@
+{
+  "objective": "Replace all project-owned balance algorithms with the manual-upright control path from Copy_of_LQR_lp1_1.slx while retaining limits, Servo, homing, and shutdown safety.",
+  "reference": {
+    "model": "E:\\直线倒立摆库\\demo\\Copy_of_LQR_lp1_1.slx",
+    "model_version": "4.37",
+    "generated_code": "E:\\直线倒立摆库\\demo\\Copy_of_LQR_lp1_1_sldrt_win64\\Copy_of_LQR_lp1_1.c",
+    "matlab_release": "R2021a",
+    "library": "D:\\matlab2021a\\toolbox\\ETLAB\\ETlabLibrary.slx"
+  },
+  "known": [
+    "The physical plant is the same plant used by the reference model.",
+    "The Yaskawa drive has been switched to analog velocity control.",
+    "Automatic swing-up is deferred; the pendulum will be manually placed upright."
+  ],
+  "implemented": [
+    "Reference encoder signs and scales",
+    "Four-term LQR with fixed 0.01 second differences",
+    "Acceleration saturation at +/-10",
+    "ACC2VOL velocity-reference integration and clamp",
+    "ACC2VOL P=0.18, I=54 and generated-code state ordering",
+    "Velocity limit +/-0.6 m/s and AO limit +/-1 V",
+    "100 Hz scheduled control over the existing faster safety monitor"
+  ],
+  "preserved": [
+    "Physical limit debounce and immediate output shutdown",
+    "Servo enable/disable and process-fault shutdown",
+    "Fresh two-limit homing and software travel envelope",
+    "Encoder monitoring, manual console, and telemetry logging"
+  ],
+  "removed": [
+    "AnglePdController",
+    "Previous LqrController",
+    "Previous PendulumStateEstimator control path",
+    "Offline reinforcement-learning trainer",
+    "Operator gain optimizer and runtime gain mutation"
+  ],
+  "acceptance_tests": {
+    "build": "Release build passed on 2026-09-03",
+    "unit_tests": "ctest release passed 1/1 on 2026-09-03",
+    "device_enumeration": "Passed; Dev1 PCI-6602 and PCI-1723,BID#15 detected; no output tasks created",
+    "hardware_motion": "not authorized and not run"
+  },
+  "blocking": [
+    "Physical balance behavior cannot be claimed verified until an operator-authorized supervised hardware run is completed."
+  ]
+}

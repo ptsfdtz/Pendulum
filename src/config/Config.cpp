@@ -286,14 +286,6 @@ AppConfig AppConfig::load(const std::filesystem::path& path) {
     control.driveModel = requireValue<std::string>(balance, "drive_model");
     control.driveControlMode =
         requireValue<std::string>(balance, "drive_control_mode");
-    control.pn400Setting =
-        requireValue<std::uint32_t>(balance, "pn400_setting");
-    control.ratedTorqueCommandVoltage =
-        requireValue<double>(balance, "rated_torque_command_voltage");
-    control.analogTorqueZeroVoltage =
-        requireValue<double>(balance, "analog_torque_zero_voltage");
-    control.analogTorqueZeroCalibrated =
-        requireValue<bool>(balance, "analog_torque_zero_calibrated");
     control.frequencyHz = requireValue<std::uint32_t>(balance, "frequency_hz");
     control.pendulumPulsesPerRevolution =
         requireValue<std::uint32_t>(balance, "pendulum_pulses_per_revolution");
@@ -305,35 +297,12 @@ AppConfig AppConfig::load(const std::filesystem::path& path) {
         requireValue<double>(balance, "downward_zero_settle_timeout_seconds");
     control.downwardZeroMaximumSpanCounts =
         requireValue<std::int64_t>(balance, "downward_zero_maximum_span_counts");
-    control.angularRateFilterAlpha =
-        requireValue<double>(balance, "angular_rate_filter_alpha");
-    control.angleGainPercentAtMaximumAngle =
-        requireValue<double>(balance, "angle_gain_percent_at_maximum_angle");
-    control.angularRateGainPercentAtMaximumRate = requireValue<double>(
-        balance, "angular_rate_gain_percent_at_maximum_rate");
-    control.maximumBalanceAngularRateDegreesPerSecond = requireValue<double>(
-        balance, "maximum_balance_angular_rate_degrees_per_second");
-    control.angleRelayBoostRatedTorqueFraction = requireValue<double>(
-        balance, "angle_relay_boost_rated_torque_fraction");
-    control.angleRelayBoostDeadbandCounts = requireValue<std::int64_t>(
-        balance, "angle_relay_boost_deadband_counts");
     control.maximumBalanceAngleRadians = requireValue<double>(
         balance, "maximum_balance_angle_radians");
-    control.cartPositionGainRatedTorquePerHalfTravel = requireValue<double>(
-        balance, "cart_position_gain_rated_torque_per_half_travel");
-    control.cartVelocityGainRatedTorquePerHalfTravelPerSecond = requireValue<double>(
-        balance, "cart_velocity_gain_rated_torque_per_half_travel_per_second");
-    control.cartIntegralGainRatedTorquePerHalfTravelSecond = requireValue<double>(
-        balance, "cart_integral_gain_rated_torque_per_half_travel_second");
-    control.maximumAbsoluteCartRatedTorqueFraction = requireValue<double>(
-        balance, "maximum_absolute_cart_rated_torque_fraction");
     control.maximumBalanceStartPositionFraction = requireValue<double>(
         balance, "maximum_balance_start_position_fraction");
     control.maximumBalancePositionFraction = requireValue<double>(
         balance, "maximum_balance_position_fraction");
-    control.defaultPolarity = requireValue<int>(balance, "default_polarity");
-    control.maximumAbsoluteRatedTorqueFraction = requireValue<double>(
-        balance, "maximum_absolute_rated_torque_fraction");
     control.telemetryDivider =
         requireValue<std::uint32_t>(balance, "telemetry_divider");
 
@@ -652,66 +621,29 @@ void AppConfig::validateForManualConsole() const {
 
     const auto& control = balanceControl;
     if (control.driveModel.empty() ||
-        control.driveControlMode != "ANALOG_TORQUE" ||
-        control.pn400Setting == 0 ||
-        !positiveFiniteHome(control.ratedTorqueCommandVoltage) ||
-        !std::isfinite(control.analogTorqueZeroVoltage) ||
-        control.frequencyHz < 50 || control.frequencyHz > 2000 ||
+        control.driveControlMode != "ANALOG_VELOCITY" ||
+        control.frequencyHz != 100 ||
         control.pendulumPulsesPerRevolution == 0 ||
+        control.pendulumCountsPerRevolution != 8000 ||
         control.pendulumCountsPerRevolution !=
             control.pendulumPulsesPerRevolution * 4ULL ||
         !positiveFiniteHome(control.downwardZeroCaptureSeconds) ||
         !positiveFiniteHome(control.downwardZeroSettleTimeoutSeconds) ||
         control.downwardZeroSettleTimeoutSeconds < control.downwardZeroCaptureSeconds ||
         control.downwardZeroMaximumSpanCounts < 0 ||
-        !std::isfinite(control.angularRateFilterAlpha) ||
-        control.angularRateFilterAlpha < 0.0 ||
-        control.angularRateFilterAlpha >= 1.0 ||
-        !std::isfinite(control.angleGainPercentAtMaximumAngle) ||
-        control.angleGainPercentAtMaximumAngle < 0.0 ||
-        !std::isfinite(control.angularRateGainPercentAtMaximumRate) ||
-        control.angularRateGainPercentAtMaximumRate < 0.0 ||
-        !std::isfinite(control.maximumBalanceAngularRateDegreesPerSecond) ||
-        control.maximumBalanceAngularRateDegreesPerSecond <= 0.0 ||
-        !std::isfinite(control.angleRelayBoostRatedTorqueFraction) ||
-        control.angleRelayBoostRatedTorqueFraction < 0.0 ||
-        control.angleRelayBoostRatedTorqueFraction >
-            control.maximumAbsoluteRatedTorqueFraction ||
-        control.angleRelayBoostDeadbandCounts < 0 ||
-        control.angleRelayBoostDeadbandCounts >=
-            static_cast<std::int64_t>(control.pendulumCountsPerRevolution / 4) ||
         !std::isfinite(control.maximumBalanceAngleRadians) ||
-        control.maximumBalanceAngleRadians <= 0.0 ||
-        control.maximumBalanceAngleRadians >= std::numbers::pi / 2.0 ||
-        !std::isfinite(control.cartPositionGainRatedTorquePerHalfTravel) ||
-        control.cartPositionGainRatedTorquePerHalfTravel < 0.0 ||
-        !std::isfinite(control.cartVelocityGainRatedTorquePerHalfTravelPerSecond) ||
-        control.cartVelocityGainRatedTorquePerHalfTravelPerSecond < 0.0 ||
-        !std::isfinite(control.cartIntegralGainRatedTorquePerHalfTravelSecond) ||
-        control.cartIntegralGainRatedTorquePerHalfTravelSecond < 0.0 ||
-        !std::isfinite(control.maximumAbsoluteCartRatedTorqueFraction) ||
-        control.maximumAbsoluteCartRatedTorqueFraction < 0.0 ||
-        control.maximumAbsoluteCartRatedTorqueFraction >
-            control.maximumAbsoluteRatedTorqueFraction ||
+        std::abs(control.maximumBalanceAngleRadians -
+                 std::numbers::pi / 6.0) > 1e-12 ||
         !std::isfinite(control.maximumBalanceStartPositionFraction) ||
         control.maximumBalanceStartPositionFraction <= 0.0 ||
         !std::isfinite(control.maximumBalancePositionFraction) ||
         control.maximumBalancePositionFraction <=
             control.maximumBalanceStartPositionFraction ||
         control.maximumBalancePositionFraction > 1.0 ||
-        (control.defaultPolarity != -1 && control.defaultPolarity != 1) ||
-        !positiveFiniteHome(control.maximumAbsoluteRatedTorqueFraction) ||
-        control.maximumAbsoluteRatedTorqueFraction > 1.0 ||
         control.telemetryDivider == 0) {
         throw std::runtime_error("Balance-control settings are invalid");
     }
-    const double maximumCommandVoltage =
-        control.ratedTorqueCommandVoltage *
-        control.maximumAbsoluteRatedTorqueFraction;
-    if (control.analogTorqueZeroVoltage - maximumCommandVoltage <
-            pci1723.minimumVoltage ||
-        control.analogTorqueZeroVoltage + maximumCommandVoltage >
-            pci1723.maximumVoltage) {
+    if (pci1723.minimumVoltage > -1.0 || pci1723.maximumVoltage < 1.0) {
         throw std::runtime_error("Balance voltage settings exceed the AO range");
     }
 }

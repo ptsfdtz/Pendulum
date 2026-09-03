@@ -35,9 +35,7 @@ add_library(pendulum_core
     src/calibration/MotorEncoderCalibration.cpp
     src/calibration/MotorZeroCalibrator.cpp
     src/config/Config.cpp
-    src/control/AnglePdController.cpp
-    src/control/LqrController.cpp
-    src/control/PendulumStateEstimator.cpp
+    src/control/ReferenceLqrVelocityController.cpp
     src/hardware/NI6602.cpp
     src/hardware/PCI1723.cpp
     src/logging/AsyncLogger.cpp
