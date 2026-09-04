@@ -121,7 +121,26 @@
     "sample_timeout_seconds": 0.05,
     "cart_jump_counts_per_sample": 1000,
     "first_jump_counts_per_sample": 2000,
-    "second_jump_counts_per_sample": 1000
+    "second_jump_counts_per_sample": 1000,
+    "swing_up": {
+      "downward_zero_capture_seconds": 1.5,
+      "downward_zero_settle_timeout_seconds": 30.0,
+      "first_downward_maximum_span_counts": 80,
+      "second_downward_maximum_span_counts": 40,
+      "cart_velocity_limit_m_s": 0.12,
+      "stage1_gain1": 2.1876,
+      "stage1_gain2": 4.9156,
+      "stage1_gain3": 8.2100,
+      "stage2_far_gain": 1.40,
+      "stage2_near_gain": 5.00,
+      "capture_assist_rate2_rad_s": 9.0,
+      "second_energy_target_joules": 0.005,
+      "balance_reentry_angle1_degrees": 23.0,
+      "balance_reentry_angle2_degrees": 20.0,
+      "soft_track_limit_meters": 0.22,
+      "track_limit_meters": 0.30,
+      "software_limit_recovery_voltage": 0.03
+    }
   },
   "manual_console": {
     "dashboard_refresh_ms": 100,

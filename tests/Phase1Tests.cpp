@@ -227,6 +227,66 @@ void testDoublePendulumLqrController() {
     require(std::isfinite(signs.outputVoltage) &&
                 std::abs(signs.outputVoltage) <= controller.settings().voltageLimit,
             "double LQR voltage must remain finite and saturated");
+
+    controller.reset();
+    const auto downward = controller.update(0, -4000, 0, true);
+    require(downward.stage == 1 && downward.swingUpActive &&
+                std::abs(downward.accelerationCommandMetersPerSecondSquared) > 0.0,
+            "double automatic controller did not kick from stationary downward");
+
+    controller.reset();
+    const auto firstCapture = controller.update(0, 0, 0, true);
+    const auto finalCapture = controller.update(0, 0, 0, true);
+    require(firstCapture.stage == 2 && finalCapture.stage == 3 &&
+                !finalCapture.swingUpActive,
+            "double automatic controller did not execute the 1->2->3 handoff");
+
+    const auto firstFallCounts = static_cast<std::int64_t>(std::llround(
+        -0.50 * 8000.0 / (2.0 * std::numbers::pi)));
+    const auto firstFall = controller.update(0, firstFallCounts, 0, true);
+    require(firstFall.stage == 1 && firstFall.swingUpActive,
+            "first-link fall did not return automatic control to stage 1");
+
+    controller.reset();
+    static_cast<void>(controller.update(0, 0, 0, true));
+    static_cast<void>(controller.update(0, 0, 0, true));
+    const auto secondFallCounts = static_cast<std::int64_t>(std::llround(
+        -0.50 * 4000.0 / (2.0 * std::numbers::pi)));
+    const auto secondFall = controller.update(0, 0, secondFallCounts, true);
+    require(secondFall.stage == 2 && secondFall.swingUpActive,
+            "second-link fall did not return automatic control to stage 2");
+
+    controller.reset();
+    static_cast<void>(controller.update(0, 0, 0, true));
+    const auto assistCounts = static_cast<std::int64_t>(std::llround(
+        -0.09 * 4000.0 / (2.0 * std::numbers::pi)));
+    const auto assisted = controller.update(0, 0, assistCounts, true);
+    require(assisted.stage == 2 && assisted.captureAssistActive,
+            "high-speed near-upright crossing did not activate capture assist");
+
+    const auto rightBlocked = Controller::applySoftwareTravelLimit(
+        0.4, 0.30, 0.30, true, 0.03);
+    require(rightBlocked.side ==
+                pendulum::control::DoubleSoftwareTravelLimitSide::Right &&
+                rightBlocked.outwardCommandBlocked &&
+                rightBlocked.outputVoltage == -0.03,
+            "double software limit did not command inward recovery at right edge");
+    const auto rightInward = Controller::applySoftwareTravelLimit(
+        -0.4, 0.31, 0.30, true, 0.03);
+    require(!rightInward.outwardCommandBlocked &&
+                rightInward.outputVoltage == -0.4,
+            "double software limit blocked an inward command");
+    const auto leftBlocked = Controller::applySoftwareTravelLimit(
+        -0.4, -0.30, 0.30, true, 0.03);
+    require(leftBlocked.side ==
+                pendulum::control::DoubleSoftwareTravelLimitSide::Left &&
+                leftBlocked.outwardCommandBlocked &&
+                leftBlocked.outputVoltage == 0.03,
+            "double software limit did not command inward recovery at left edge");
+    const auto reversed = Controller::applySoftwareTravelLimit(
+        -0.4, 0.30, 0.30, false, 0.03);
+    require(reversed.outwardCommandBlocked && reversed.outputVoltage == 0.03,
+            "double software limit did not honor reversed drive polarity");
 }
 
 void testSafetyOrderAndFaultContainment() {

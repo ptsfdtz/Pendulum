@@ -1,0 +1,44 @@
+{
+  "objective": "Run the MATLAB-derived double-pendulum swing-up and LQR capture on the existing C++ hardware path after entering balance auto.",
+  "mode": "hardware_integration_offline_verified",
+  "known": [
+    "The cart, encoders, voltage output, homing, limit debounce and double LQR already exist in PendulumLab.",
+    "The first absolute encoder is 8000 counts/revolution and the second relative encoder is 4000 counts/revolution.",
+    "Both encoder count directions and the absolute theta2 conversion were previously verified.",
+    "The control path runs at 200 Hz and converts acceleration to a velocity reference and then to AO voltage."
+  ],
+  "implemented": [
+    "Added the MATLAB-derived three-stage supervisor to DoublePendulumLqrController.",
+    "Added deterministic kick-off from an exactly stationary downward state.",
+    "Added automatic stationary downward-zero capture for both encoders.",
+    "Relaxed downward-zero capture to a sliding 1.5 s window with configurable 3.6 degree peak-to-peak tolerance for each link and a 30 s timeout.",
+    "Added balance auto and balance start command selection to the double-balance executable.",
+    "Added a non-terminating +/-0.30 m software boundary that replaces outward commands with a configurable 0.03 V inward recovery command and then resumes swing-up.",
+    "Made automatic mode persistent: a stage-3 fall returns to stage 1 or 2 based on which link left the recovery envelope, and later capture attempts continue without restarting the process.",
+    "Superseded the interim hardware-log-based tuning because the operator reported manual assistance in those runs; those logs are not used as optimization evidence.",
+    "A deterministic nonlinear model-only robustness search selected 2.00x paper-adapted stage-1 gains, a 0.12 m/s stage-1 speed gate, stage-2 far/near gains 1.40/5.00, a 9 rad/s capture-assist eligibility limit, and a 0.005 J second-link energy target; the 1 V hardware output ceiling is unchanged.",
+    "Kept physical limit debounce, encoder jump checks, sample timeout, software travel stop, AO saturation and safe shutdown.",
+    "Added stage and capture-time telemetry while preserving immutable per-run directories."
+  ],
+  "validation": [
+    "Release build completed successfully.",
+    "All CTest tests passed.",
+    "Software-boundary tests passed for left/right outward blocking, inward pass-through, and reversed motor polarity.",
+    "The relaxed sliding-window downward-zero build passed the full CTest regression and configuration validation.",
+    "The selected friction-allowance gains retained a successful 1-2-3 capture in a 60 s nonlinear MATLAB regression, with maximum simulated cart travel 0.117 m for the tested combination.",
+    "C++ unit tests passed for stage-3 first-link fall to stage 1 and second-link fall to stage 2, followed by a successful release build and --validate-only check.",
+    "Earlier hardware-log observations are retained only as run history and were excluded from final parameter selection because manual assistance contaminated the trajectories.",
+    "At the MATLAB/Simulink 1 ms step, the selected model-only parameters completed and settled all 18 full 100 s nonlinear scenarios spanning six symmetric downward initial states and three actuator/friction profiles, with no 0.35 m hard-stop failure, mean capture time 41.200 s, and worst cart travel 0.3081 m.",
+    "At the real controller's 5 ms sample period, the same parameters completed 16 of 18 full scenarios and 16 of 18 isolated stage-2 scenarios without a hard-limit failure; the two full misses were the exactly symmetric ideal downward starts, while perturbed starts completed.",
+    "The final generated Simulink model completed stages 1-2-3 from a small asymmetric downward perturbation, captured at 45.965 s, settled by 50 s, used 0.1279 m maximum cart travel, and passed run_simulation validation.",
+    "The 1.50x comparison completed 16 of 18 scenarios and reached the 0.35 m hard limit twice, so it was rejected.",
+    "The updated configuration parsed successfully and the full C++ CTest suite passed while the active hardware run was left untouched.",
+    "The double-balance configuration passed --validate-only in automatic mode.",
+    "After the model-only parameter update, the Release build, complete CTest suite, and --validate-only configuration check all passed again.",
+    "No actuator-output test was run by Codex."
+  ],
+  "best_known_artifact": "out/build/vs2022-x64/Release/pendulum_double_balance.exe",
+  "known_good_unchanged": "config/double_balance_known_good.json",
+  "next_authorized_step": "A supervised physical run initiated by the user with balance auto.",
+  "promotion_rule": "Three consecutive successful hardware captures with no safety trip before promotion to known-good."
+}

@@ -15,14 +15,46 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start_double_balance.ps1
 
 Alternatively, double-click `start_double_balance.cmd` in the project root.
 
-The executable automatically measures both physical limits, returns the cart
-to the measured center, switches AO0 to 0 V and Servo OFF, and waits. Hold both
-links vertically upright and press Enter to start the 200 Hz LQR experiment.
+The executable first waits at AO0=0 V and Servo OFF for one command. Enter
+`balance auto` to measure both physical limits, return the cart to center,
+confirm both links are stationary and hanging downward, and run the migrated
+three-stage double-pendulum swing-up followed by LQR capture. Enter
+`balance start` to retain the manual-upright LQR-only workflow.
 The default duration is unlimited. Press `Q` or `Esc` to stop normally, disable the
 servo, and finish writing the logs. `Ctrl+C` remains an emergency stop. Pass a positive
 `-Duration` value to the PowerShell launcher for a timed test. Every run creates an immutable directory
 under `experiments/double_balance` containing `config_snapshot.json`,
 `home.json`, `telemetry.csv`, and `metrics.json`.
+
+The automatic telemetry includes controller `stage` (1=first-link energy
+swing-up, 2=first-link stabilization plus second-link swing-up, 3=double LQR).
+`metrics.json` records whether stage 3 was reached and its capture time. The
+new swing-up values in `config/config.json` are a simulation-verified hardware
+candidate; `config/double_balance_known_good.json` remains unchanged until the
+hardware promotion rule has been met.
+
+Automatic mode is persistent: after stage 3, a first-link fall beyond 23
+degrees returns to stage 1, while a second-link fall beyond 20 degrees with
+the first link still near upright returns to stage 2. The run stays active and
+attempts capture again. Metrics record `capture_count` and
+`fall_recovery_count`. To allow for real friction without changing the proven
+voltage ceiling, a model-only robust search selected stage-1 energy gains at
+2.00 times the paper-adapted values, stage-2 far/near gains of 1.40/5.00, and
+a 0.005 J second-link energy target. The stage-1 energy-injection cart-speed
+gate is 0.12 m/s. Hardware logs were deliberately excluded from this search
+because manual intervention made them unsuitable as optimization evidence.
+
+Downward-zero capture uses a continuously updated 1.5 s window rather than
+requiring one exact encoder value. The default accepted peak-to-peak spans are
+80 counts for link 1 and 40 counts for the relative link-2 encoder (about
+3.6 degrees for each); it waits up to 30 s for any qualifying window and uses
+the median count as the zero reference.
+
+During automatic swing-up, reaching the `+/-0.30 m` software boundary does not
+end the run. An outward voltage is replaced by the configured `0.03 V` inward
+recovery command, controller command integrators are reset, and normal swing-up
+resumes after the cart returns inside the boundary. The independent `+/-0.35 m`
+software stop and debounced physical-limit stop remain active as final guards.
 
 During balance, each physical limit must be active for the configured
 `manual_console.limit_debounce_samples` consecutive 200 Hz samples before it stops the
