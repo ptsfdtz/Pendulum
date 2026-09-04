@@ -1,0 +1,36 @@
+{
+  "objective": "Migrate the measured double-inverted-pendulum MATLAB LQR to the existing PendulumLab C++ hardware project with a one-command experiment workflow.",
+  "known": {
+    "hardware": "NI PCI-6602 plus Advantech PCI-1723 AO0 on the existing cart",
+    "cart_encoder": "Dev1/ctr0; raw count decreases toward +x; 33259 counts over 0.734 m",
+    "first_encoder": "Dev1/ctr1; X4; 8000 counts/rev; raw count increases when the first tip moves toward +x",
+    "second_encoder": "Dev1/ctr2; X4; 4000 counts/rev; relative joint encoder; raw count increases toward +x",
+    "sample_rate_hz": 200,
+    "lqr_source": "C:/Users/YW/Documents/workspace/Pendulum/dp_best_lqr.m",
+    "safe_shutdown": "AO0=0 V followed by Servo OFF"
+  },
+  "acceptance_tests": [
+    "Existing phase1 C++ regression suite passes",
+    "Double-pendulum controller sign, absolute-angle composition, finite output, and voltage saturation tests pass",
+    "pendulum_double_balance builds in Release configuration",
+    "The executable validates config without creating hardware output tasks",
+    "A supervised run automatically homes, waits for Enter at center, runs LQR, and saves telemetry and metrics"
+  ],
+  "attempted_changes": [
+    "Added a third PCI-6602 counter task for the second pendulum encoder with 10 us A/B filtering",
+    "Added a parameterized six-state double-pendulum LQR and acceleration-to-voltage cascade",
+    "Added a standalone guided hardware experiment executable and one-click launcher",
+    "Added immutable per-run config, telemetry, and deterministic metrics artifacts",
+    "Added a simulation-verified known-good parameter snapshot"
+  ],
+  "outcomes": [
+    "Release build passed",
+    "All existing and new unit tests passed",
+    "Config-only executable validation passed with the MATLAB gain vector"
+  ],
+  "best_known_artifact": "out/build/vs2022-x64/Release/pendulum_double_balance.exe",
+  "unresolved_blockers": [
+    "The new second-encoder C++ path and full automatic-home/LQR sequence require the first supervised physical run",
+    "The MATLAB gain set remains simulation-verified until hardware telemetry demonstrates stable operation"
+  ]
+}

@@ -35,6 +35,7 @@ add_library(pendulum_core
     src/calibration/MotorEncoderCalibration.cpp
     src/calibration/MotorZeroCalibrator.cpp
     src/config/Config.cpp
+    src/control/DoublePendulumLqrController.cpp
     src/control/ReferenceLqrVelocityController.cpp
     src/hardware/NI6602.cpp
     src/hardware/PCI1723.cpp
@@ -63,6 +64,11 @@ add_executable(pendulum_manual_console src/tools/ManualConsoleMain.cpp)
 target_link_libraries(pendulum_manual_console PRIVATE pendulum_core winmm)
 target_compile_definitions(pendulum_manual_console PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(pendulum_manual_console PRIVATE /W4 /permissive- /EHsc)
+
+add_executable(pendulum_double_balance src/tools/DoubleBalanceMain.cpp)
+target_link_libraries(pendulum_double_balance PRIVATE pendulum_core winmm)
+target_compile_definitions(pendulum_double_balance PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(pendulum_double_balance PRIVATE /W4 /permissive- /EHsc /utf-8)
 
 if(PENDULUMLAB_BUILD_TESTS)
     enable_testing()

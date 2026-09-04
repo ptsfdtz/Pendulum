@@ -1,0 +1,21 @@
+{
+  "status": "simulation_verified_baseline",
+  "source": "C:/Users/YW/Documents/workspace/Pendulum/dp_best_lqr.m",
+  "state_order": ["x", "theta1", "theta2", "xdot", "theta1dot", "theta2dot"],
+  "lqr_gain": [
+    20.755626070279462,
+    136.68455751706179,
+    -254.85837173801795,
+    24.440647335478328,
+    3.3044801353394511,
+    -40.750449384516202
+  ],
+  "velocity_filter_hz": 20.0,
+  "acceleration_limit_m_s2": 30.0,
+  "velocity_reference_limit_m_s": 0.6,
+  "velocity_kp": 0.18,
+  "velocity_ki": 54.0,
+  "voltage_limit": 1.0,
+  "stationary_voltage": -0.00152587890625,
+  "promotion_rule": "Promote only after three consecutive successful hardware runs with no safety trip."
+}

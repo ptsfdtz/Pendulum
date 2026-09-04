@@ -5,6 +5,37 @@ Windows C++ controller for a single-stage linear inverted pendulum using:
 - NI PCI-6602 for the motor encoder, pendulum encoder, limits, and Servo enable
 - Advantech PCI-1723 AO0 for the Yaskawa SGD7S velocity command
 
+## Double-pendulum LQR experiment
+
+The MATLAB-identified double-pendulum LQR is available through one command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start_double_balance.ps1
+```
+
+Alternatively, double-click `start_double_balance.cmd` in the project root.
+
+The executable automatically measures both physical limits, returns the cart
+to the measured center, switches AO0 to 0 V and Servo OFF, and waits. Hold both
+links vertically upright and press Enter to start the 200 Hz LQR experiment.
+The default duration is unlimited. Press `Q` or `Esc` to stop normally, disable the
+servo, and finish writing the logs. `Ctrl+C` remains an emergency stop. Pass a positive
+`-Duration` value to the PowerShell launcher for a timed test. Every run creates an immutable directory
+under `experiments/double_balance` containing `config_snapshot.json`,
+`home.json`, `telemetry.csv`, and `metrics.json`.
+
+During balance, each physical limit must be active for the configured
+`manual_console.limit_debounce_samples` consecutive 200 Hz samples before it stops the
+experiment. The default is 3 samples; a low sample resets that limit's counter. The
+termination reason records whether the stable input was the left or right limit.
+
+The double-pendulum controller uses the measured cart conversion
+`0.734 m / 33259 counts`, first encoder `Dev1/ctr1` at 8000 counts/rev, and
+relative second encoder `Dev1/ctr2` at 4000 counts/rev. Both physical pendulum
+encoders increase toward +x, while the MATLAB model angle is positive toward
+-x, so both angle conversions are negative. The absolute second-link angle is
+`theta2 = theta1 + relative_theta2`.
+
 ## Balance controller
 
 The live balance path is the complete controller from

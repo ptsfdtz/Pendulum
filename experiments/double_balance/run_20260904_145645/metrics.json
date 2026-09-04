@@ -1,0 +1,13 @@
+{
+  "duration_seconds": 9.7219473,
+  "max_abs_theta1_degrees": 8.594999999999999,
+  "max_abs_theta2_degrees": 3.780000000000001,
+  "max_abs_voltage": 0.36806792481775996,
+  "max_abs_x_meters": 0.044425328482516006,
+  "result": "safety_abort",
+  "rms_theta1_degrees": 3.585476490881893,
+  "rms_theta2_degrees": 1.8321492388267184,
+  "samples": 1944,
+  "termination_reason": "Motion into an active physical limit was rejected",
+  "voltage_saturation_fraction": 0.0
+}

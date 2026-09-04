@@ -2,6 +2,7 @@
 #include "pendulum/calibration/MotorEncoderCalibration.h"
 #include "pendulum/calibration/MotorZeroCalibrator.h"
 #include "pendulum/config/Config.h"
+#include "pendulum/control/DoublePendulumLqrController.h"
 #include "pendulum/control/ReferenceLqrVelocityController.h"
 #include "pendulum/safety/SafetyManager.h"
 
@@ -204,6 +205,28 @@ void testReferenceLqrVelocityController() {
                 pendulum::control::SoftwareTravelLimitSide::None &&
                 insideEnvelope.outputVoltage == 0.4,
             "software limit changed a command inside the envelope");
+}
+
+void testDoublePendulumLqrController() {
+    using Controller = pendulum::control::DoublePendulumLqrController;
+    Controller controller;
+    controller.reset();
+    const auto zero = controller.update(0, 0, 0);
+    require(std::abs(zero.outputVoltage - controller.settings().stationaryVoltage) < 1e-15,
+            "double LQR zero-state stationary voltage mismatch");
+
+    controller.reset();
+    static_cast<void>(controller.update(0, 0, 0));
+    const auto signs = controller.update(-100, 100, 100);
+    require(signs.cartPositionMeters > 0.0,
+            "cart count decrease must map to positive x");
+    require(signs.firstAngleRadians < 0.0,
+            "first encoder count increase must map to negative model angle");
+    require(signs.secondAngleRadians < signs.firstAngleRadians,
+            "second relative angle must be added to the first absolute angle");
+    require(std::isfinite(signs.outputVoltage) &&
+                std::abs(signs.outputVoltage) <= controller.settings().voltageLimit,
+            "double LQR voltage must remain finite and saturated");
 }
 
 void testSafetyOrderAndFaultContainment() {
@@ -626,6 +649,7 @@ int main(int argc, char* argv[]) {
     try {
         testDefaultConfig(argv[1]);
         testReferenceLqrVelocityController();
+        testDoublePendulumLqrController();
         testSafetyOrderAndFaultContainment();
         testEncoderRolloverAndCalibration();
         testMotorZeroSelectionMath();

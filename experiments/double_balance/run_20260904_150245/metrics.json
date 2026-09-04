@@ -1,0 +1,13 @@
+{
+  "duration_seconds": 6.3917344,
+  "max_abs_theta1_degrees": 9.809999999999999,
+  "max_abs_theta2_degrees": 2.609999999999998,
+  "max_abs_voltage": 0.506031121763429,
+  "max_abs_x_meters": 0.14912168134940917,
+  "result": "safety_abort",
+  "rms_theta1_degrees": 1.2684219290681005,
+  "rms_theta2_degrees": 0.6926072144593421,
+  "samples": 1278,
+  "termination_reason": "pendulum reached 10 degree stop angle",
+  "voltage_saturation_fraction": 0.0
+}
