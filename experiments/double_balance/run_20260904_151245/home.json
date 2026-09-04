@@ -1,0 +1,11 @@
+{
+  "center_counts": -392,
+  "center_error_counts": 14,
+  "final_position_counts": -378,
+  "forward_travel_counts": 33108,
+  "left_boundary_counts": 16162,
+  "reverse_travel_counts": 33108,
+  "right_boundary_counts": -16946,
+  "travel_counts": 33108,
+  "travel_disagreement_counts": 0
+}

@@ -477,9 +477,21 @@ int run(const Options& options) {
                 sample.cartCounts - homeResult.centerCounts,
                 sample.firstCounts - reference.firstCounts,
                 sample.secondCounts - reference.secondCounts);
-            if (std::abs(output.firstAngleRadians) >= config.stopAngleRadians ||
-                std::abs(output.secondAngleRadians) >= config.stopAngleRadians) {
-                throw std::runtime_error("pendulum reached 10 degree stop angle");
+            if (std::abs(output.firstAngleRadians) >= config.stopAngleRadians) {
+                std::ostringstream message;
+                message << "theta1 reached configured stop angle: "
+                        << std::abs(output.firstAngleRadians) * 180.0 / std::numbers::pi
+                        << " deg >= "
+                        << config.stopAngleRadians * 180.0 / std::numbers::pi << " deg";
+                throw std::runtime_error(message.str());
+            }
+            if (std::abs(output.secondAngleRadians) >= config.stopAngleRadians) {
+                std::ostringstream message;
+                message << "theta2 reached configured stop angle: "
+                        << std::abs(output.secondAngleRadians) * 180.0 / std::numbers::pi
+                        << " deg >= "
+                        << config.stopAngleRadians * 180.0 / std::numbers::pi << " deg";
+                throw std::runtime_error(message.str());
             }
             if (std::abs(output.cartPositionMeters) >= config.positionStopMeters) {
                 throw std::runtime_error("cart reached 0.35 m software stop");

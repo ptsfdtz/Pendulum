@@ -36,6 +36,11 @@ encoders increase toward +x, while the MATLAB model angle is positive toward
 -x, so both angle conversions are negative. The absolute second-link angle is
 `theta2 = theta1 + relative_theta2`.
 
+The current working disturbance-recovery envelope arms within 5 degrees and
+stops if either absolute link reaches 15 degrees. This 15-degree value is a
+working hardware-test setting and must not replace the known-good baseline
+until it passes repeated tests without a safety regression.
+
 ## Balance controller
 
 The live balance path is the complete controller from

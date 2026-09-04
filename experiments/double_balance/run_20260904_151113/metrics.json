@@ -1,0 +1,13 @@
+{
+  "duration_seconds": 0.9670223,
+  "max_abs_theta1_degrees": 14.894999999999998,
+  "max_abs_theta2_degrees": 12.915,
+  "max_abs_voltage": 0.905996836464924,
+  "max_abs_x_meters": 0.15878799723383144,
+  "result": "safety_abort",
+  "rms_theta1_degrees": 5.577555038478228,
+  "rms_theta2_degrees": 4.113053213338152,
+  "samples": 193,
+  "termination_reason": "theta1 reached configured stop angle: 15.39 deg >= 15 deg",
+  "voltage_saturation_fraction": 0.0
+}
