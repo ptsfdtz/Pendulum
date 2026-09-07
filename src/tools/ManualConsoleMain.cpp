@@ -1,3 +1,4 @@
+#include "DoubleBalanceConfig.h"
 #include "pendulum/calibration/HomeCenterController.h"
 #include "pendulum/calibration/MotorEncoderCalibration.h"
 #include "pendulum/calibration/MotorZeroCalibrator.h"
@@ -41,6 +42,9 @@ using namespace std::chrono_literals;
 
 struct Options {
     std::filesystem::path configPath{"config/config.json"};
+    std::optional<double> duration;
+    bool validateOnly{false};
+    bool preview{false};
 };
 
 class WindowsTimerResolution final {
@@ -67,6 +71,12 @@ Options parseOptions(int argc, char* argv[]) {
         const std::string argument = argv[index];
         if (argument == "--config" && ++index < argc) {
             options.configPath = argv[index];
+        } else if (argument == "--duration" && ++index < argc) {
+            options.duration = std::stod(argv[index]);
+        } else if (argument == "--preview") {
+            options.preview = true;
+        } else if (argument == "--validate-only") {
+            options.validateOnly = true;
         } else if (argument == "--help" || argument == "-h") {
             std::cout << "Usage: pendulum_manual_console [--config PATH]\n";
             std::exit(0);
@@ -117,7 +127,28 @@ public:
                   pendulum::logging::AsyncLogger& logger,
                   pendulum::safety::SafetyManager& safety)
         : config_(std::move(config)), configPath_(std::move(configPath)),
-          logger_(logger), safety_(safety) {}
+          logger_(logger), safety_(safety) {
+#ifdef PENDULUM_DOUBLE_CONSOLE
+        doubleConfig_ = pendulum::tools::loadDoubleConfig(configPath_, std::nullopt);
+#endif
+    }
+    void setDuration(std::optional<double> duration) {
+        if (doubleConfig_ && duration) doubleConfig_->durationSeconds = *duration;
+    }
+
+    int preview() {
+        dashboardMode_ = enableDashboardTerminal();
+        record("Display preview; hardware not opened");
+        renderDashboard();
+        if (dashboardMode_) {
+            while (const auto line = readDashboardCommand()) {
+                if (trim(*line) == "quit") break;
+                notify("Display preview only. Enter quit to exit.");
+                renderDashboard();
+            }
+        }
+        return 0;
+    }
 
     int run() {
         config_.validateForManualConsole();
@@ -169,6 +200,7 @@ public:
 
 private:
     struct PendulumSample {
+        std::int64_t secondPositionCounts{0};
         std::int64_t positionCounts{0};
         std::int64_t motorPositionCounts{0};
         std::chrono::steady_clock::time_point time{};
@@ -337,7 +369,7 @@ private:
             }
             const auto width = static_cast<std::size_t>(std::max(20, consoleWidth));
             const bool showHelp = dashboardHelpVisible_.load();
-            const int eventRows = showHelp ? 0 : std::clamp(consoleHeight - 21, 0, 20);
+            const int eventRows = showHelp ? 0 : std::clamp(consoleHeight - 21 - (doubleConfig_ ? 1 : 0), 0, 20);
 
             std::deque<std::string> events;
             {
@@ -408,6 +440,13 @@ private:
                      << "    rate " << std::showpos << std::fixed << std::setprecision(1)
                      << std::setw(12) << pendulumSpeedCountsPerSecond_.load() << " counts/s";
             screen << row(pendulum.str(), width) << '\n';
+            if (doubleConfig_) {
+                std::ostringstream second;
+                second << "PENDULUM2 position " << std::setw(12) << secondPositionCounts_.load()
+                       << "    rate " << std::showpos << std::fixed << std::setprecision(1)
+                       << std::setw(12) << secondSpeedCountsPerSecond_.load() << " counts/s";
+                screen << row(second.str(), width) << '\n';
+            }
             screen << border("BALANCE CONTROL / LIVE TERMS", width) << '\n';
             std::ostringstream balance;
             balance << "STATE     "
@@ -555,6 +594,11 @@ private:
                                         config_.ni6602.pendulumEncoderBTerminal,
                                         config_.ni6602.pendulumEncoderFilterMinPulseWidthMicroseconds *
                                             1e-6);
+        if (doubleConfig_) {
+            ni_.configureSecondPendulumEncoderRaw(doubleConfig_->secondCounter,
+                doubleConfig_->secondATerminal, doubleConfig_->secondBTerminal,
+                doubleConfig_->secondFilterSeconds);
+        }
         record("Hardware initialized at AO0=0 V and Servo OFF");
     }
 
@@ -574,7 +618,8 @@ private:
         std::uint32_t rightCount = 0;
         std::uint32_t samplesSeen = 0;
         std::uint32_t previousMotor = 0;
-        std::uint32_t previousPendulum = 0;
+        std::uint32_t previousPendulum = 0, previousSecond = 0;
+        std::int64_t secondPosition = 0;
         std::int64_t motorPosition = 0;
         std::int64_t pendulumPosition = 0;
         auto previousTime = std::chrono::steady_clock::now();
@@ -584,6 +629,7 @@ private:
                 const auto limits = ni_.readLimitInputs();
                 const auto motorEncoder = ni_.readMotorEncoderRaw();
                 const auto pendulumEncoder = ni_.readPendulumEncoderRaw();
+                const auto secondEncoder = doubleConfig_ ? ni_.readSecondPendulumEncoderRaw() : 0U;
                 const auto sampleTime = std::chrono::steady_clock::now();
                 leftRawHigh_.store(limits.leftRawHigh);
                 rightRawHigh_.store(limits.rightRawHigh);
@@ -618,6 +664,18 @@ private:
                     pendulumPosition =
                         pendulum::calibration::MotorEncoderCalibration::deltaWithRollover(
                             0U, pendulumEncoder);
+                }
+                if (doubleConfig_) {
+                    const auto delta = pendulum::calibration::MotorEncoderCalibration::deltaWithRollover(
+                        havePreviousEncoderSample ? previousSecond : 0U, secondEncoder);
+                    secondPosition += delta;
+                    if (havePreviousEncoderSample) {
+                        const double dt = std::chrono::duration<double>(sampleTime - previousTime).count();
+                        if (dt > 0) secondSpeedCountsPerSecond_.store(
+                            0.8 * secondSpeedCountsPerSecond_.load() + 0.2 * static_cast<double>(delta) / dt);
+                    }
+                    secondPositionCounts_.store(secondPosition);
+                    previousSecond = secondEncoder;
                 }
                 motorPositionCounts_.store(motorPosition);
                 pendulumPositionCounts_.store(pendulumPosition);
@@ -669,6 +727,7 @@ private:
                 }
                 {
                     std::scoped_lock lock(pendulumSampleMutex_);
+                    pendulumSample_.secondPositionCounts = secondPosition;
                     pendulumSample_.positionCounts = pendulumPosition;
                     pendulumSample_.motorPositionCounts = motorPosition;
                     pendulumSample_.time = sampleTime;
@@ -734,7 +793,8 @@ private:
         } else if (command == "encoder") {
             notify("motor_position=" + std::to_string(motorPositionCounts_.load()) +
                    ", pendulum_position=" +
-                   std::to_string(pendulumPositionCounts_.load()));
+                   std::to_string(pendulumPositionCounts_.load()) +
+                   (doubleConfig_ ? ", second_pendulum_position=" + std::to_string(secondPositionCounts_.load()) : ""));
         } else if (command == "log") {
             printLog();
         } else if (command == "servo") {
@@ -1041,26 +1101,34 @@ private:
         constexpr auto samplePeriod = 10ms;
         const auto requiredSamples = std::max<std::size_t>(
             2, static_cast<std::size_t>(std::ceil(
-                   config_.balanceControl.downwardZeroCaptureSeconds / 0.010)));
+                   (doubleConfig_ ? doubleConfig_->downwardZeroCaptureSeconds : config_.balanceControl.downwardZeroCaptureSeconds) / 0.010)));
         const auto deadline = std::chrono::steady_clock::now() +
                               std::chrono::duration<double>(
-                                  config_.balanceControl.downwardZeroSettleTimeoutSeconds);
-        std::deque<std::int64_t> window;
+                                  doubleConfig_ ? doubleConfig_->downwardZeroSettleTimeoutSeconds : config_.balanceControl.downwardZeroSettleTimeoutSeconds);
+        std::deque<std::int64_t> window, secondWindow;
         pendulumZeroCaptured_.store(false);
         while (std::chrono::steady_clock::now() < deadline &&
                !faultLatched_.load() && !safety_.stopRequested()) {
-            window.push_back(pendulumPositionCounts_.load());
+            const auto zeroSample = latestPendulumSample();
+            window.push_back(zeroSample.positionCounts);
+            secondWindow.push_back(zeroSample.secondPositionCounts);
             if (window.size() > requiredSamples) {
                 window.pop_front();
+                secondWindow.pop_front();
             }
             if (window.size() == requiredSamples) {
                 const std::vector<std::int64_t> samples(window.begin(), window.end());
                 try {
                     const auto count = stableRepresentative(
                         samples,
-                        config_.balanceControl.downwardZeroMaximumSpanCounts);
+                        doubleConfig_ ? doubleConfig_->firstDownwardMaximumSpanCounts : config_.balanceControl.downwardZeroMaximumSpanCounts);
                     const auto [minimum, maximum] =
                         std::minmax_element(samples.begin(), samples.end());
+                    if (doubleConfig_) {
+                        secondDownCount_.store(stableRepresentative(
+                            std::vector<std::int64_t>(secondWindow.begin(), secondWindow.end()),
+                            doubleConfig_->secondDownwardMaximumSpanCounts));
+                    }
                     pendulumDownCount_.store(count);
                     pendulumZeroCaptured_.store(true);
                     balanceAngleDegrees_.store(0.0);
@@ -1116,7 +1184,10 @@ private:
         startBalance(true);
     }
 
+    #include "DoubleConsoleControl.inc"
+
     void startBalance(bool automaticSwingUp) {
+        if (doubleConfig_) { startDoubleBalance(automaticSwingUp); return; }
         if (balanceRunning_.load()) {
             notify("Balance control is already running.", true);
             return;
@@ -1210,6 +1281,14 @@ private:
 
 
     void printBalanceGains() const {
+        if (doubleConfig_) {
+            std::ostringstream values;
+            values << "Double LQR K=";
+            for (const auto gain : doubleConfig_->controller.gain) values << gain << ' ';
+            values << " frequency_hz=200";
+            notify(values.str());
+            return;
+        }
         std::ostringstream message;
         message << "reference_lqr_locked=true"
                 << ", kx=" << pendulum::control::ReferenceLqrVelocityController::kCartPositionGain
@@ -1509,14 +1588,14 @@ private:
         std::ostringstream message;
         message << "balance_running=" << std::boolalpha
                 << balanceRunning_.load()
-                << ", controller=Copy_of_LQR_lp1_1_LQR_ACC2VOL"
+                << (doubleConfig_ ? ", controller=double_swing_up_lqr" : ", controller=Copy_of_LQR_lp1_1_LQR_ACC2VOL")
                 << ", automatic_mode=" << balanceAutoMode_.load()
                 << ", swing_up_active=" << balanceSwingUpActive_.load()
                 << ", software_limit_active="
                 << balanceSoftwareLimitActive_.load()
                 << ", drive=" << config_.balanceControl.driveModel
                 << ", mode=" << config_.balanceControl.driveControlMode
-                << ", control_period_s=0.01"
+                << (doubleConfig_ ? ", control_period_s=0.005" : ", control_period_s=0.01")
                 << ", acc2vol_integrator_ts_s=0.005"
                 << ", angle_deg=" << balanceAngleDegrees_.load()
                 << ", angular_rate_deg_s="
@@ -1773,6 +1852,7 @@ private:
                 << ", pendulum_position=" << pendulumPositionCounts_.load()
                 << ", home_session_result="
                 << (homeResultAvailable_.load() ? "available" : "not_run");
+        if (doubleConfig_) message << ", second_pendulum_position=" << secondPositionCounts_.load();
         if (homeResultAvailable_.load()) {
             message << ", home_travel=" << homeCalibrationTravel_.load()
                     << ", home_center=" << homeCalibrationCenter_.load()
@@ -1841,6 +1921,9 @@ private:
         std::cout << "CSV log: " << logger_.path().string() << '\n';
     }
 
+    std::optional<pendulum::tools::DoubleBalanceConfig> doubleConfig_;
+    std::atomic<std::int64_t> secondPositionCounts_{0}, secondDownCount_{0}, secondReferenceCount_{0};
+    std::atomic<double> secondSpeedCountsPerSecond_{0.0};
     pendulum::config::AppConfig config_;
     std::filesystem::path configPath_;
     pendulum::logging::AsyncLogger& logger_;
@@ -1920,6 +2003,11 @@ private:
 
 int runApplication(const Options& options) {
     auto config = pendulum::config::AppConfig::load(options.configPath);
+    config.validateForManualConsole();
+#ifdef PENDULUM_DOUBLE_CONSOLE
+    static_cast<void>(pendulum::tools::loadDoubleConfig(options.configPath, options.duration));
+#endif
+    if (options.validateOnly) { std::cout << "Console configuration valid\n"; return 0; }
     pendulum::logging::AsyncLogger logger(config.logging.directory,
                                            config.logging.queueCapacity);
     pendulum::safety::SafetyManager safety([&logger](const std::string& reason) {
@@ -1928,7 +2016,8 @@ int runApplication(const Options& options) {
     pendulum::safety::ProcessSafetyHooks processHooks(safety);
     pendulum::safety::SafetyGuard guard(safety);
     ManualConsole console(std::move(config), options.configPath, logger, safety);
-    const int result = console.run();
+    console.setDuration(options.duration);
+    const int result = options.preview ? console.preview() : console.run();
     std::cout << "Log: " << logger.path().string() << '\n';
     return result;
 }

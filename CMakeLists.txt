@@ -65,9 +65,9 @@ target_link_libraries(pendulum_manual_console PRIVATE pendulum_core winmm)
 target_compile_definitions(pendulum_manual_console PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(pendulum_manual_console PRIVATE /W4 /permissive- /EHsc)
 
-add_executable(pendulum_double_balance src/tools/DoubleBalanceMain.cpp)
+add_executable(pendulum_double_balance src/tools/ManualConsoleMain.cpp)
 target_link_libraries(pendulum_double_balance PRIVATE pendulum_core winmm)
-target_compile_definitions(pendulum_double_balance PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_definitions(pendulum_double_balance PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN PENDULUM_DOUBLE_CONSOLE)
 target_compile_options(pendulum_double_balance PRIVATE /W4 /permissive- /EHsc /utf-8)
 
 if(PENDULUMLAB_BUILD_TESTS)

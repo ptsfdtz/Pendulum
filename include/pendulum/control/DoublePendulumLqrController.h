@@ -78,6 +78,8 @@ struct DoublePendulumLqrOutput {
     double accelerationCommandMetersPerSecondSquared{0.0};
     double velocityReferenceMetersPerSecond{0.0};
     double velocityErrorMetersPerSecond{0.0};
+    double proportionalVoltage{0.0};
+    double integralVoltage{0.0};
     double outputVoltage{0.0};
     bool voltageSaturated{false};
     int stage{3};
