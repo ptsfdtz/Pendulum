@@ -1,0 +1,101 @@
+{
+  "matlab_release": "R2021a",
+  "date": "2026-09-08",
+  "mode": "offline only",
+  "checks": [
+    {
+      "order": "single",
+      "scenario": "swingup",
+      "engine": "numeric",
+      "passed": true,
+      "max_abs_x": 0.25493201630534035,
+      "max_abs_u": 5.396115078698891,
+      "stages": [
+        1,
+        2
+      ],
+      "output_file": "output/single_pendulum/tpd044652b_3c74_444f_adf5_e07503980273/swingup_numeric.mat"
+    },
+    {
+      "order": "single",
+      "scenario": "balance",
+      "engine": "numeric",
+      "passed": true,
+      "max_abs_x": 0.08216175505447018,
+      "max_abs_u": 5.86,
+      "stages": 2,
+      "output_file": "output/single_pendulum/tpf37aefec_0193_42ab_88e7_d4699d7fbf28/balance_numeric.mat"
+    },
+    {
+      "order": "double",
+      "scenario": "swingup",
+      "engine": "numeric",
+      "passed": true,
+      "max_abs_x": 0.14485906123695158,
+      "max_abs_u": 10.106807786063996,
+      "stages": [
+        1,
+        2,
+        3
+      ],
+      "output_file": "output/double_pendulum/tp0b68bf24_c044_4e7a_bc06_3db51daa3cca/swingup_numeric.mat"
+    },
+    {
+      "order": "double",
+      "scenario": "balance",
+      "engine": "numeric",
+      "passed": true,
+      "max_abs_x": 0.18178728813972309,
+      "max_abs_u": 30,
+      "stages": 3,
+      "output_file": "output/double_pendulum/tp18a138a0_67e7_43ff_bef9_5ba02a947a37/balance_numeric.mat"
+    },
+    {
+      "order": "single",
+      "scenario": "swingup",
+      "engine": "simulink",
+      "passed": true,
+      "max_abs_x": 0.2365316187406269,
+      "max_abs_u": 10,
+      "stages": [
+        1,
+        2
+      ],
+      "output_file": "output/single_pendulum/tpf670de76_8f79_479a_a0ea_5183a0a00719/swingup_simulink.mat"
+    },
+    {
+      "order": "single",
+      "scenario": "balance",
+      "engine": "simulink",
+      "passed": true,
+      "max_abs_x": 0.0821617550544701,
+      "max_abs_u": 5.86,
+      "stages": 2,
+      "output_file": "output/single_pendulum/tp79c5c092_2a06_4a90_b21c_01120ed35b80/balance_simulink.mat"
+    },
+    {
+      "order": "double",
+      "scenario": "swingup",
+      "engine": "simulink",
+      "passed": true,
+      "max_abs_x": 0.1278648264697195,
+      "max_abs_u": 10.109764573583426,
+      "stages": [
+        1,
+        2,
+        3
+      ],
+      "output_file": "output/double_pendulum/tp568e1384_e52e_4845_a858_5c09e5c0f905/swingup_simulink.mat"
+    },
+    {
+      "order": "double",
+      "scenario": "balance",
+      "engine": "simulink",
+      "passed": true,
+      "max_abs_x": 0.181152754082115,
+      "max_abs_u": 30,
+      "stages": 3,
+      "output_file": "output/double_pendulum/tp852fbdb3_ae6c_46ff_9bf8_25d8f47ad4a1/balance_simulink.mat"
+    }
+  ]
+}

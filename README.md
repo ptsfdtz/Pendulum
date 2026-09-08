@@ -1,5 +1,7 @@
 # PendulumLab
 
+MATLAB/Simulink offline models, reproduction commands, and model adaptation notes are in [matlab/README.md](matlab/README.md).
+
 Windows C++ controller for a single-stage linear inverted pendulum using:
 
 - NI PCI-6602 for the motor encoder, pendulum encoder, limits, and Servo enable

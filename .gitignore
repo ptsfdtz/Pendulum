@@ -10,3 +10,8 @@
 *.suo
 __pycache__/
 /experiments
+# MATLAB generated simulation and optimization artifacts
+/matlab/output/
+/matlab/**/slprj/
+/matlab/**/*.slxc
+/matlab/**/*.asv

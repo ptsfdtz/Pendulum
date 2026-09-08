@@ -1,0 +1,34 @@
+{
+  "objective": "Keep single and double swing-up and balance as four explicit offline scenarios",
+  "source_files": [
+    {
+      "source": "E:\\\u76f4\u7ebf\u5012\u7acb\u6446\u5e93\\demo\\Copy_of_LQR_lp1_1.slx",
+      "destination": "single_pendulum/reference/Copy_of_LQR_lp1_1.slx",
+      "sha256": "215601559efc01b1f57b66747687a935f65f7b6d6cb2bb115337de95f819c452"
+    },
+    {
+      "source": "E:\\\u76f4\u7ebf\u5012\u7acb\u6446\u5e93\\demo\\P_1_1.m",
+      "destination": "single_pendulum/reference/P_1_1.m",
+      "sha256": "4a7d62b1011f19d2ecf18cf3eedd90c276913297786e75810790b8bf51ec7f05"
+    },
+    {
+      "source": "E:\\\u76f4\u7ebf\u5012\u7acb\u6446\u5e93\\ETLAB\\ETlabLibrary.slx",
+      "destination": "single_pendulum/reference/ETlabLibrary.slx",
+      "sha256": "2618cb4a915950ee260e47d758e38e47692da1081840c406c226229357b7419d"
+    }
+  ],
+  "known": "Single reference contains hardware I/O, not a closed-loop offline plant",
+  "assumed": "Use acceleration-driven physical pendulum for the new single offline harness",
+  "status": "passed",
+  "validation_report": "validation_report.json",
+  "adaptation": {
+    "plant": "Acceleration-driven physical pendulum from P_1_1 linearization",
+    "balance": "Reference acceleration gains; continuous states instead of encoder differences",
+    "swingup": "Consistent upright-zero energy with bounded velocity and stopping-distance guards",
+    "simulink": "Sample/hold and interpreted adapters to shared MATLAB functions"
+  },
+  "limitations": [
+    "Offline adaptation is not sample-for-sample hardware controller reproduction",
+    "Hardware and voltage loop were not simulated or operated"
+  ]
+}
