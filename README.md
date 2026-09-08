@@ -1,199 +1,26 @@
 # PendulumLab
 
-MATLAB/Simulink offline models, reproduction commands, and model adaptation notes are in [matlab/README.md](matlab/README.md).
-
-Windows C++ controller for a single-stage linear inverted pendulum using:
-
-- NI PCI-6602 for the motor encoder, pendulum encoder, limits, and Servo enable
-- Advantech PCI-1723 AO0 for the Yaskawa SGD7S velocity command
-
-## Double-pendulum LQR experiment
-
-The MATLAB-identified double-pendulum LQR is available through one command:
+一级、二级倒立摆共用一个启动脚本：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start_double_balance.ps1
+powershell -ExecutionPolicy Bypass -File .\start_pendulum.ps1
 ```
 
-Alternatively, double-click `start_double_balance.cmd` in the project root.
+- `1` + 回车：一级起摆并稳定。
+- `2` + 回车：二级起摆并稳定。
+- 运行中按 `Q` / `Esc`：停止并返回选择；选择界面输入 `Q` 退出。
+- `Ctrl+C`：急停。
 
-The executable first waits at AO0=0 V and Servo OFF for one command. Enter
-`balance auto` to measure both physical limits, return the cart to center,
-confirm both links are stationary and hanging downward, and run the migrated
-three-stage double-pendulum swing-up followed by LQR capture. Enter
-`balance start` to retain the manual-upright LQR-only workflow.
-The default duration is unlimited. Press `Q` or `Esc` to stop normally, disable the
-servo, and finish writing the logs. `Ctrl+C` remains an emergency stop. Pass a positive
-`-Duration` value to the PowerShell launcher for a timed test. Every run creates an immutable directory
-under `experiments/double_balance` containing `config_snapshot.json`,
-`home.json`, `telemetry.csv`, and `metrics.json`.
+自动流程包含回中、下垂零点确认、起摆和稳定控制。界面保留模式、状态及必要错误，详细数据写日志。物理限位、行程保护和输出停止机制继续生效。
 
-The automatic telemetry includes controller `stage` (1=first-link energy
-swing-up, 2=first-link stabilization plus second-link swing-up, 3=double LQR).
-`metrics.json` records whether stage 3 was reached and its capture time. The
-new swing-up values in `config/config.json` are a simulation-verified hardware
-candidate; `config/double_balance_known_good.json` remains unchanged until the
-hardware promotion rule has been met.
+使用 NI PCI-6602 读取编码器、限位并控制 Servo，Advantech PCI-1723 AO0 输出速度指令。
 
-Automatic mode is persistent: after stage 3, a first-link fall beyond 23
-degrees returns to stage 1, while a second-link fall beyond 20 degrees with
-the first link still near upright returns to stage 2. The run stays active and
-attempts capture again. Metrics record `capture_count` and
-`fall_recovery_count`. To allow for real friction without changing the proven
-voltage ceiling, a model-only robust search selected stage-1 energy gains at
-2.00 times the paper-adapted values, stage-2 far/near gains of 1.40/5.00, and
-a 0.005 J second-link energy target. The stage-1 energy-injection cart-speed
-gate is 0.12 m/s. Hardware logs were deliberately excluded from this search
-because manual intervention made them unsuitable as optimization evidence.
+[控制台说明](docs/CONSOLE.md) · [MATLAB 一级/二级离线复现](matlab/README.md) · [接线定义](docs/引脚定义.md)
 
-Downward-zero capture uses a continuously updated 1.5 s window rather than
-requiring one exact encoder value. The default accepted peak-to-peak spans are
-80 counts for link 1 and 40 counts for the relative link-2 encoder (about
-3.6 degrees for each); it waits up to 30 s for any qualifying window and uses
-the median count as the zero reference.
-
-During automatic swing-up, reaching the `+/-0.30 m` software boundary does not
-end the run. An outward voltage is replaced by the configured `0.03 V` inward
-recovery command, controller command integrators are reset, and normal swing-up
-resumes after the cart returns inside the boundary. The independent `+/-0.35 m`
-software stop and debounced physical-limit stop remain active as final guards.
-
-During balance, each physical limit must be active for the configured
-`manual_console.limit_debounce_samples` consecutive 200 Hz samples before it stops the
-experiment. The default is 3 samples; a low sample resets that limit's counter. The
-termination reason records whether the stable input was the left or right limit.
-
-The double-pendulum controller uses the measured cart conversion
-`0.734 m / 33259 counts`, first encoder `Dev1/ctr1` at 8000 counts/rev, and
-relative second encoder `Dev1/ctr2` at 4000 counts/rev. Both physical pendulum
-encoders increase toward +x, while the MATLAB model angle is positive toward
--x, so both angle conversions are negative. The absolute second-link angle is
-`theta2 = theta1 + relative_theta2`.
-
-The current working disturbance-recovery envelope arms within 5 degrees and
-stops if either absolute link reaches 15 degrees. This 15-degree value is a
-working hardware-test setting and must not replace the known-good baseline
-until it passes repeated tests without a safety regression.
-
-## Balance controller
-
-The live balance path is the complete controller from
-`E:\直线倒立摆库\demo\Copy_of_LQR_lp1_1.slx` (model version 4.37). The previous
-PD/LQR controllers and offline gain-learning tools have been removed.
-
-The implementation preserves the reference model's signs, constants,
-unit-delay initial conditions, saturation behavior, and update ordering:
-
-```text
-theta = wrap(-(pendulum_count - upright_count) * 2*pi/8000)
-x     = -(motor_count - center_count) * 0.163/8000
-
-theta_dot = (theta - theta_previous) / 0.01
-x_dot     = (x - x_previous) / 0.01
-
-lqr_acc = clamp(
-    -58.6*theta
-    -10.69*theta_dot
-    +10*x
-    +12.23*x_dot,
-    -10, +10)
-```
-
-The reference `ACC2VOL` block is also reproduced:
-
-- control update: 0.01 s
-- integrator multiplier `Ts`: 0.005 s, exactly as stored in the model
-- velocity reference limit: +/-0.6 m/s
-- velocity PI: P=0.18, I=54
-- AO0 limit: +/-1 V
-- AO0 zero command: 0 V
-
-The first `balance auto` after program startup runs a fresh two-limit center
-operation and remembers that center for the current process. Later
-`balance auto` commands return directly to the remembered center without
-probing both limits again. Each automatic run confirms the pendulum downward
-zero before enabling the exact reference `Swing_up` branch. The model selects `Swing_up` while
-`abs(theta) >= pi/6` and LQR inside that region; it returns to `Swing_up`
-automatically if the pendulum leaves the LQR region. Copied swing-up constants:
-`m=0.134`, `g=9.8`, `l=0.223`, `J=0.0089`, `Gain1=5`, `Gain2=6`, and
-`PositionLimit=0.25`.
-
-`balance start` remains the manual-upright mode. Hold the pendulum within
-+/-30 degrees of upright before starting it. This mode stops when the pendulum
-leaves the LQR region.
-
-## Safety retained
-
-- active-HIGH left and right physical limits with debounce
-- AO0=0 V before Servo OFF on a limit, monitor fault, exception, Ctrl+C, or exit
-- fresh two-limit `home center` on the first automatic run; later automatic
-  runs return to the remembered in-process center
-- balance start restricted to the configured center window
-- automatic swing-up software travel limit at 85% of calibrated half-travel;
-  outward commands are blocked without ending the run, and inward commands
-  remain available so swing-up can recover and continue
-- manual-upright balance still stops if it reaches the software travel limit
-- manual Servo, homing, encoder inspection, calibration, and CSV logging remain
-
-## Manual console
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start_manual_console.ps1
-```
-
-Automatic sequence:
-
-```text
-balance auto
-```
-
-The first command performs `home center`; subsequent commands reuse the
-remembered center. Each run confirms the downward zero, starts reference
-swing-up, and switches to LQR automatically.
-
-Manual-upright sequence:
-
-```text
-home center
-# Manually hold the pendulum near upright
-balance start
-```
-
-Useful commands:
-
-```text
-status
-limits
-encoder
-servo on
-servo off
-home measure
-home center
-home return
-balance zero
-balance auto
-balance start
-balance stop
-balance status
-balance gains
-quit
-```
-
-Reference-model gains are locked and cannot be changed at runtime.
-
-## Build and test
+## 开发验证
 
 ```powershell
 & 'C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' --preset vs2022-x64
-& 'C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' --build --preset release
+& 'C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' --build --preset release --target pendulum_console pendulum_tests
 & 'C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe' --preset release --output-on-failure
 ```
-
-## Read-only hardware checks
-
-```powershell
-& '.\out\build\vs2022-x64\Release\pendulum_self_test.exe' --config '.\config\config.json' --enumerate-only
-& '.\out\build\vs2022-x64\Release\pendulum_self_test.exe' --config '.\config\config.json' --input-probe
-```
-
-These checks do not enable Servo or command motion.
