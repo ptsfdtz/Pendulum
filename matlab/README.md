@@ -1,3 +1,5 @@
+实物 MATLAB 入口及板卡验证请见 [实物迁移说明](hardware/README.md)。下文描述的是独立的离线模型。
+
 # MATLAB 离线模拟与仿真
 
 本目录保留一级、二级倒立摆的起摆与稳摆。二级来自原 `Pendulum` 工程；一级原始模型来自 `E:\直线倒立摆库`，另配可独立运行的离线数学模型。原始目录及其历史实验数据保留。
@@ -27,7 +29,7 @@ result = run_pendulum('double','balance',struct('engine','numeric'));
 assert(result.passed);
 ```
 
-四个场景均支持 `engine='numeric'` 和 `engine='simulink'`，默认 Simulink。运行 `report = verify_pendulum()` 自动检查四个场景的两种引擎，共八项。一级两个场景与二级起摆默认 50 秒，二级单独稳摆 15 秒。原有 `setup_pendulum; result = run_simulation;` 仍是二级完整起摆入口。
+四个场景均支持 `engine='numeric'` 和 `engine='simulink'`，默认基础 MATLAB 数值引擎（不需要工具箱）；显式 `engine='simulink'` 才运行 Simulink。运行 `report = verify_pendulum()` 仅用基础 MATLAB 检查四个数值场景；`verify_pendulum({'numeric','simulink'})` 才检查两种引擎，共八项。一级两个场景与二级起摆默认 50 秒，二级单独稳摆 15 秒。原有 `setup_pendulum; result = run_simulation;` 仍是二级完整起摆入口。
 
 统一入口每次把参数、信号和结果保存到 `output/<模型>/` 下的独立运行目录，返回 `result.output_file`。一级 Simulink 显示状态 Scope，二级保留原动画和 Scope；数值入口返回信号数组。
 
@@ -95,4 +97,4 @@ LQR 搜索将候选 `dp_best_lqr.m` 写入输出目录。确认结果后，再�
 4. 状态维度或输入定义改变时，同步调整线性化、控制器、数值积分器、Simulink 接线及动画。三阶段能量起摆逻辑针对当前双摆结构，需要重新推导。
 5. 重新设计 LQR 并验证起摆、稳定性、行程和饱和。保留采样周期测试：当前不连续控制律对采样周期敏感。
 
-C++ 项目的传感器、相对编码器转换、加速度到电压映射和实时控制仍由 C++ 实现。本目录复现的是离线模型，仿真参数不可直接等同于设备电压。
+新增 `hardware/` 已提供 MATLAB 实物传感器读取、相对编码器转换、加速度到电压映射及控制循环，验证范围见其说明。本目录复现的是离线模型，仿真参数不可直接等同于设备电压。
