@@ -5,6 +5,7 @@
 #include "pendulum/control/DoublePendulumLqrController.h"
 #include "pendulum/control/ReferenceLqrVelocityController.h"
 #include "pendulum/safety/SafetyManager.h"
+#include "../src/tools/ConsoleCommands.h"
 
 #include <nlohmann/json.hpp>
 
@@ -707,6 +708,18 @@ int main(int argc, char* argv[]) {
         return 2;
     }
     try {
+        using pendulum::tools::ConsoleCommand;
+        using pendulum::tools::parseConsoleCommand;
+        require(parseConsoleCommand("1") == ConsoleCommand::Single, "single selection failed");
+        require(parseConsoleCommand("2") == ConsoleCommand::Double, "double selection failed");
+        require(parseConsoleCommand("q") == ConsoleCommand::Stop &&
+                parseConsoleCommand("Q") == ConsoleCommand::Stop &&
+                parseConsoleCommand("\x1b") == ConsoleCommand::Stop, "stop selection failed");
+        for (const auto oldCommand : {"balance auto", "balance start", "servo on",
+                 "voltage 1", "home center", "help", "1 extra", "12", ""}) {
+            require(parseConsoleCommand(oldCommand) == ConsoleCommand::Invalid,
+                    "obsolete or ambiguous command was accepted");
+        }
         testDefaultConfig(argv[1]);
         testReferenceLqrVelocityController();
         testDoublePendulumLqrController();

@@ -1,0 +1,319 @@
+{
+  "objective": "Portable offline MATLAB/Simulink reproduction in PendulumLab",
+  "source": "C:\\Users\\YW\\Documents\\workspace\\Pendulum",
+  "known": "PendulumLab is the C++ project; matlab was empty",
+  "assumed": "Preserve original source and historical results",
+  "excluded": [
+    "CSV/MAT search history",
+    "slprj",
+    "tmp",
+    "old session records"
+  ],
+  "acceptance": [
+    "50 s numeric simulation",
+    "50 s Simulink simulation from unrelated working directory"
+  ],
+  "status": "passed",
+  "files": [
+    {
+      "source": "build_model.m",
+      "destination": "double_pendulum/build_model.m",
+      "source_sha256": "8bee70d597f8968fa33ff6cc1b00d962d17e6a1d5bc5e7abbc74f53d557ff7cf",
+      "migrated_sha256": "3cf95c23bec8af4fcac1b1777f4858220b0bbbe4698252f82193aed7bc1ac4a7"
+    },
+    {
+      "source": "dp_animation.m",
+      "destination": "double_pendulum/dp_animation.m",
+      "source_sha256": "0e5d52a1c7a7bba731b35aadcef28244cbb8ba478df1722e2b29329c2a630986",
+      "migrated_sha256": "0e5d52a1c7a7bba731b35aadcef28244cbb8ba478df1722e2b29329c2a630986"
+    },
+    {
+      "source": "dp_best_lqr.m",
+      "destination": "double_pendulum/dp_best_lqr.m",
+      "source_sha256": "3805fd5420e16b4afac2a71c78536a608d2e827113e20babe7843fff96a331e9",
+      "migrated_sha256": "3805fd5420e16b4afac2a71c78536a608d2e827113e20babe7843fff96a331e9"
+    },
+    {
+      "source": "dp_config.m",
+      "destination": "double_pendulum/dp_config.m",
+      "source_sha256": "2a9bca561e9cc4d16b58e7f2b4e251a1de6a10ceaf25939e4e58a02fc4ff372b",
+      "migrated_sha256": "2a9bca561e9cc4d16b58e7f2b4e251a1de6a10ceaf25939e4e58a02fc4ff372b"
+    },
+    {
+      "source": "dp_controller.m",
+      "destination": "double_pendulum/dp_controller.m",
+      "source_sha256": "f4b1e4ee0e732128f710afd6498cca67a4ad788c7c12612052dbe4a9a0c97037",
+      "migrated_sha256": "0b49a5dc5d925a73a48fadeb52ca24801b5ecbe6d6b62b8457e98244450db77e"
+    },
+    {
+      "source": "dp_dynamics.m",
+      "destination": "double_pendulum/dp_dynamics.m",
+      "source_sha256": "414ab8c90a3588830ccc4ef117423d4bffbc52d76a7612f24acce8d8da5b8bcd",
+      "migrated_sha256": "414ab8c90a3588830ccc4ef117423d4bffbc52d76a7612f24acce8d8da5b8bcd"
+    },
+    {
+      "source": "dp_evaluate_controller.m",
+      "destination": "double_pendulum/dp_evaluate_controller.m",
+      "source_sha256": "303f1b133ce108ae6ff5e15818c3072fc3c0d1b4795b7fa09f2aed26abf3a18d",
+      "migrated_sha256": "303f1b133ce108ae6ff5e15818c3072fc3c0d1b4795b7fa09f2aed26abf3a18d"
+    },
+    {
+      "source": "dp_evaluate_stage2_candidate.m",
+      "destination": "double_pendulum/dp_evaluate_stage2_candidate.m",
+      "source_sha256": "84c35c51dae38ce17bf251071b8803b71eb7d8acfd625f5da54de5dbd9ca340b",
+      "migrated_sha256": "c0ad40c04159c4bc04c75c3801e26387f636ca839b7e2ec426f65d7134b5cc5c"
+    },
+    {
+      "source": "dp_linearize.m",
+      "destination": "double_pendulum/dp_linearize.m",
+      "source_sha256": "66e445a68f4d2057bd0e3e6f854dcb3ca2bd5599181c0e99be8f3ef60798bf3a",
+      "migrated_sha256": "66e445a68f4d2057bd0e3e6f854dcb3ca2bd5599181c0e99be8f3ef60798bf3a"
+    },
+    {
+      "source": "dp_lqr_design.m",
+      "destination": "double_pendulum/dp_lqr_design.m",
+      "source_sha256": "05f420bd081ed8b7b5ebad47f3efd1e0996cfe8a79247bd5a6713e5fcfd4d739",
+      "migrated_sha256": "05f420bd081ed8b7b5ebad47f3efd1e0996cfe8a79247bd5a6713e5fcfd4d739"
+    },
+    {
+      "source": "dp_lqr_optimize.m",
+      "destination": "double_pendulum/dp_lqr_optimize.m",
+      "source_sha256": "8683275fbf1b31dd9225d90d21b6622a183380c782a2a9f3b86f6b44d8aa3250",
+      "migrated_sha256": "454d330834547d92ba6facc7441779993d3e5a6ef805d8f3f613d6661b3c0e9f"
+    },
+    {
+      "source": "dp_optimize_stage2_robust.m",
+      "destination": "double_pendulum/dp_optimize_stage2_robust.m",
+      "source_sha256": "3e3b0b23344fc0bd25a88da0cf9353b0a668b66cdd82d6be9544ae8a5829f221",
+      "migrated_sha256": "3e3b0b23344fc0bd25a88da0cf9353b0a668b66cdd82d6be9544ae8a5829f221"
+    },
+    {
+      "source": "dp_plot_optimization.m",
+      "destination": "double_pendulum/dp_plot_optimization.m",
+      "source_sha256": "523944fbcff2f6500e1cecf2df88457cf443496e0c0b751a915dce6f4ed1cfc1",
+      "migrated_sha256": "523944fbcff2f6500e1cecf2df88457cf443496e0c0b751a915dce6f4ed1cfc1"
+    },
+    {
+      "source": "dp_simulate_numeric.m",
+      "destination": "double_pendulum/dp_simulate_numeric.m",
+      "source_sha256": "94c00faa87e19259551f3ec7ddb69fc2c8b23aa1b2b65437085c9bfe99cb688b",
+      "migrated_sha256": "94c00faa87e19259551f3ec7ddb69fc2c8b23aa1b2b65437085c9bfe99cb688b"
+    },
+    {
+      "source": "dp_simulate_swingup.m",
+      "destination": "double_pendulum/dp_simulate_swingup.m",
+      "source_sha256": "8d441bd9b3654945527284da37c59f873b6015ff407563093df2543d2d11d28d",
+      "migrated_sha256": "8d441bd9b3654945527284da37c59f873b6015ff407563093df2543d2d11d28d"
+    },
+    {
+      "source": "dp_swingup_control.m",
+      "destination": "double_pendulum/dp_swingup_control.m",
+      "source_sha256": "c70f9996288099f606e1542a87655d20144088dea6db8ad66f8af83c9654c313",
+      "migrated_sha256": "c70f9996288099f606e1542a87655d20144088dea6db8ad66f8af83c9654c313"
+    },
+    {
+      "source": "run_simulation.m",
+      "destination": "double_pendulum/run_simulation.m",
+      "source_sha256": "076c43d902c3da52672cc4a5f0578118c111fb66817a73752e9137e8a0ba497d",
+      "migrated_sha256": "f74a55e43c22e241a4373af6c1c2477a87412a25834ffff10acb2b61dde659ff"
+    },
+    {
+      "source": "Double_Pendulum_Project.slx",
+      "destination": "double_pendulum/reference/Double_Pendulum_Project.slx",
+      "source_sha256": "3e5e6767597d479f607c2fbf08c51707a12a3d84f68c2b9ccadb0de2d2c2a84d",
+      "migrated_sha256": "3e5e6767597d479f607c2fbf08c51707a12a3d84f68c2b9ccadb0de2d2c2a84d"
+    }
+  ],
+  "changes": [
+    "Paths resolve from source files instead of pwd",
+    "Generated models and caches isolated in output",
+    "Original SLX snapshot in reference to avoid path shadowing",
+    "Optimization writes candidate LQR to output; explicit promotion required"
+  ],
+  "validation": {
+    "environment": "MATLAB R2021a, Windows",
+    "working_directory": "PendulumLab project root, outside MATLAB sources",
+    "numeric": {
+      "duration_s": 50,
+      "failed": false,
+      "settled": true,
+      "max_abs_x_m": 0.144859061,
+      "max_abs_u_m_s2": 10.106807786
+    },
+    "simulink": {
+      "duration_s": 50,
+      "passed": true,
+      "settled": true,
+      "stages": [
+        1,
+        2,
+        3
+      ],
+      "max_abs_x_m": 0.127865,
+      "max_abs_u_m_s2": 10.109765
+    },
+    "log": "output/validation.log",
+    "raw_results": "output/double_pendulum/migration_validation.mat",
+    "limitations": [
+      "Full optimization searches were not rerun",
+      "Hardware was not operated",
+      "Animation/UI were disabled for validation"
+    ]
+  },
+  "followup": "Four single/double swingup/balance scenarios; numeric and Simulink",
+  "validation_report": "validation_report.json",
+  "source_inventory": [
+    {
+      "file": "double_pendulum/build_model.m",
+      "sha256": "3cf95c23bec8af4fcac1b1777f4858220b0bbbe4698252f82193aed7bc1ac4a7"
+    },
+    {
+      "file": "double_pendulum/dp_animation.m",
+      "sha256": "0e5d52a1c7a7bba731b35aadcef28244cbb8ba478df1722e2b29329c2a630986"
+    },
+    {
+      "file": "double_pendulum/dp_best_lqr.m",
+      "sha256": "3805fd5420e16b4afac2a71c78536a608d2e827113e20babe7843fff96a331e9"
+    },
+    {
+      "file": "double_pendulum/dp_config.m",
+      "sha256": "2a9bca561e9cc4d16b58e7f2b4e251a1de6a10ceaf25939e4e58a02fc4ff372b"
+    },
+    {
+      "file": "double_pendulum/dp_controller.m",
+      "sha256": "0b49a5dc5d925a73a48fadeb52ca24801b5ecbe6d6b62b8457e98244450db77e"
+    },
+    {
+      "file": "double_pendulum/dp_dynamics.m",
+      "sha256": "414ab8c90a3588830ccc4ef117423d4bffbc52d76a7612f24acce8d8da5b8bcd"
+    },
+    {
+      "file": "double_pendulum/dp_evaluate_controller.m",
+      "sha256": "303f1b133ce108ae6ff5e15818c3072fc3c0d1b4795b7fa09f2aed26abf3a18d"
+    },
+    {
+      "file": "double_pendulum/dp_evaluate_stage2_candidate.m",
+      "sha256": "c0ad40c04159c4bc04c75c3801e26387f636ca839b7e2ec426f65d7134b5cc5c"
+    },
+    {
+      "file": "double_pendulum/dp_linearize.m",
+      "sha256": "66e445a68f4d2057bd0e3e6f854dcb3ca2bd5599181c0e99be8f3ef60798bf3a"
+    },
+    {
+      "file": "double_pendulum/dp_lqr_design.m",
+      "sha256": "05f420bd081ed8b7b5ebad47f3efd1e0996cfe8a79247bd5a6713e5fcfd4d739"
+    },
+    {
+      "file": "double_pendulum/dp_lqr_optimize.m",
+      "sha256": "454d330834547d92ba6facc7441779993d3e5a6ef805d8f3f613d6661b3c0e9f"
+    },
+    {
+      "file": "double_pendulum/dp_optimize_stage2_robust.m",
+      "sha256": "3e3b0b23344fc0bd25a88da0cf9353b0a668b66cdd82d6be9544ae8a5829f221"
+    },
+    {
+      "file": "double_pendulum/dp_output_dir.m",
+      "sha256": "dea2aab5a63ca1d12b1ac71bc67792ad342eaca4acf65447b76d4153ce324fe3"
+    },
+    {
+      "file": "double_pendulum/dp_plot_optimization.m",
+      "sha256": "523944fbcff2f6500e1cecf2df88457cf443496e0c0b751a915dce6f4ed1cfc1"
+    },
+    {
+      "file": "double_pendulum/dp_scenario_config.m",
+      "sha256": "4c8d735f889ef62076bdd10a47cc8b54d7708ea3bf60ae4bdeda5469b996febb"
+    },
+    {
+      "file": "double_pendulum/dp_simulate_numeric.m",
+      "sha256": "94c00faa87e19259551f3ec7ddb69fc2c8b23aa1b2b65437085c9bfe99cb688b"
+    },
+    {
+      "file": "double_pendulum/dp_simulate_swingup.m",
+      "sha256": "8d441bd9b3654945527284da37c59f873b6015ff407563093df2543d2d11d28d"
+    },
+    {
+      "file": "double_pendulum/dp_swingup_control.m",
+      "sha256": "c70f9996288099f606e1542a87655d20144088dea6db8ad66f8af83c9654c313"
+    },
+    {
+      "file": "double_pendulum/models/Double_Pendulum_Balance.slx",
+      "sha256": "4a66d1d362659e7e0b4c3361463027af9f48f77fdf0e1dcd4a9bbd64bf445bd8"
+    },
+    {
+      "file": "double_pendulum/models/Double_Pendulum_Project.slx",
+      "sha256": "9814d743c133906e12f628000259f5a12698ee48ea030671dd6a0f6998a5cd4f"
+    },
+    {
+      "file": "double_pendulum/reference/Double_Pendulum_Project.slx",
+      "sha256": "3e5e6767597d479f607c2fbf08c51707a12a3d84f68c2b9ccadb0de2d2c2a84d"
+    },
+    {
+      "file": "double_pendulum/run_simulation.m",
+      "sha256": "f74a55e43c22e241a4373af6c1c2477a87412a25834ffff10acb2b61dde659ff"
+    },
+    {
+      "file": "run_pendulum.m",
+      "sha256": "8bb23f5b2ab7536f1f1697fae1009ea6f1f1936460a529b050d7fca54fb81533"
+    },
+    {
+      "file": "setup_pendulum.m",
+      "sha256": "58218f1886686bb09fb999a7d28808b3537b8f68929dcdbbcccba5c711f7c996"
+    },
+    {
+      "file": "single_pendulum/models/Single_Pendulum_balance.slx",
+      "sha256": "fd4bb66c4111b5e15d46388df78792759842d229827f1642df0c2530657ae222"
+    },
+    {
+      "file": "single_pendulum/models/Single_Pendulum_swingup.slx",
+      "sha256": "64ece400254f98e10b91d909db0a156982fbf57a992563077072ba3495687d4f"
+    },
+    {
+      "file": "single_pendulum/reference/Copy_of_LQR_lp1_1.slx",
+      "sha256": "215601559efc01b1f57b66747687a935f65f7b6d6cb2bb115337de95f819c452"
+    },
+    {
+      "file": "single_pendulum/reference/ETlabLibrary.slx",
+      "sha256": "2618cb4a915950ee260e47d758e38e47692da1081840c406c226229357b7419d"
+    },
+    {
+      "file": "single_pendulum/reference/P_1_1.m",
+      "sha256": "4a7d62b1011f19d2ecf18cf3eedd90c276913297786e75810790b8bf51ec7f05"
+    },
+    {
+      "file": "single_pendulum/sp_build_model.m",
+      "sha256": "f20877f133b42f4b0958f10b556c568741b1e6d037e0eca044e67f88bd3136fd"
+    },
+    {
+      "file": "single_pendulum/sp_config.m",
+      "sha256": "0a0cf795eb2e33eba06ed7c3a55d90206994bb2f2116305cbaa0d9a2b05d20d5"
+    },
+    {
+      "file": "single_pendulum/sp_control.m",
+      "sha256": "f4cb8ed8d05ba0c2960b322c11f9a850220ec8529d348f0aeacadd30d10fd5a5"
+    },
+    {
+      "file": "single_pendulum/sp_control_vector.m",
+      "sha256": "2129147b34f09d8c3b6909961980f758d944bab40281bc1100eb8ce831fb4820"
+    },
+    {
+      "file": "single_pendulum/sp_dynamics.m",
+      "sha256": "4dbd86ce9faa7a3ce70e2d6253b366db13f7295a9fa388d5c4a0e536d9d5d3e4"
+    },
+    {
+      "file": "single_pendulum/sp_dynamics_vector.m",
+      "sha256": "b6336539297cfaabe4a451947ec95a5824e97e68880b02fd497a48715c5c8ffd"
+    },
+    {
+      "file": "single_pendulum/sp_metrics.m",
+      "sha256": "19e5c80fd9afba1ab4c4c4328ee56426fc26ba124ee54600e49d9778d295c499"
+    },
+    {
+      "file": "single_pendulum/sp_simulate.m",
+      "sha256": "66fec9fe9f4d88395241d043e5107f8fe31a804a9208e52b6b6537d41bd09f12"
+    },
+    {
+      "file": "verify_pendulum.m",
+      "sha256": "25461ce04d1f1fa18865909c7902de62b5bd7f7a565a843d41804c180a19a458"
+    }
+  ]
+}

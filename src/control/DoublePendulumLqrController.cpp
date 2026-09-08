@@ -283,6 +283,8 @@ DoublePendulumLqrOutput DoublePendulumLqrController::update(
     const double unconstrained = settings_.stationaryVoltage +
         settings_.velocityProportionalGain * out.velocityErrorMetersPerSecond +
         settings_.velocityIntegralGain * candidateIntegral;
+    out.proportionalVoltage = settings_.velocityProportionalGain * out.velocityErrorMetersPerSecond;
+    out.integralVoltage = settings_.velocityIntegralGain * candidateIntegral;
     out.outputVoltage = std::clamp(
         unconstrained, -settings_.voltageLimit, settings_.voltageLimit);
     out.voltageSaturated = out.outputVoltage != unconstrained;
