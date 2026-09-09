@@ -1,0 +1,29 @@
+﻿{
+    "pending":  "None",
+    "archived_later_version":  "matlab/output/native_simulink/rollback_archive_20260909_100216",
+    "restored_baseline":  "First successful 30-second single pendulum hardware run",
+    "original_hardware_files":  "Restored to HEAD; initial workspace was clean",
+    "evidence":  "matlab/output/native_simulink/tpe03f1b50_7cd1_40ab_962a_a2a1a2df353a",
+    "additional_hardware_tests":  false,
+    "status":  "restored_on_user_request",
+    "offline_validation":  "Passed: both models compile; 15506 samples per order; errors 0 and 3.55e-15; MATLAB exit 0",
+    "path_fix":  {
+                     "scope":  "Path initialization only; restored controller and I/O behavior unchanged",
+                     "tests":  "Fresh default MATLAB path; load/update both models without opening hardware",
+                     "cause":  "Direct Run cannot resolve ph_config because hardware folder is not on MATLAB path",
+                     "result":  "Passed: both models load/update from default path; already-open S-function fallback passes; no hardware opened; MATLAB exit 0"
+                 },
+    "direct_run":  {
+                       "log":  "matlab/output/native_simulink/direct_run_validation.log",
+                       "validation":  "Both models compile; session selection and restart checked without opening devices",
+                       "implementation":  "Default single session hardware with original input preflight; explicit readonly preserved; controller unchanged",
+                       "requested":  "Single model Run starts physical swing-up"
+                   },
+    "first_sample_fix":  {
+                             "change":  "Keep servo disabled through first evaluation; establish pacing at first Outputs and arm only after fresh-input validation",
+                             "acceptance":  "Delayed first callbacks accepted while disabled; later timeouts still stop outputs; native graph unchanged",
+                             "cause":  "Start callback to first Outputs initialization delay counted as runtime sample timeout at zero samples",
+                             "result":  "Passed: actual S-function/native graph simulated with mock I/O; 120 ms startup and first-evaluation delays accepted while disabled; post-start timeout/deadline and stale input cases stop/inhibit output; both models compile; no physical I/O opened",
+                             "log":  "matlab/output/native_simulink/startup_validation2.log"
+                         }
+}
