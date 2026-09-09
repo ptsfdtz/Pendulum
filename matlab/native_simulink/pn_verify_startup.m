@@ -4,7 +4,9 @@ here=fileparts(mfilename('fullpath')); addpath(here,fullfile(here,'tests'),fullf
 saved=load(fullfile(here,'..','output','native_simulink','tp2afa237e_9111_4e1f_b2d1_a645c2d3cde7','run.mat'));
 assert(saved.result.samples==0 && contains(saved.result.error,'Control sample timeout'));
 % Exercise the actual S-function + native graph after a delayed Start callback.
-model='Pendulum_Native_1'; load_system(model); ctx=PnStartupTestSession(0.095,0.12);
+model='Pendulum_Native_1'; load_system(model);
+sync=[model '/Real-Time Synchronization']; set_param(sync,'Commented','on');
+ctx=PnStartupTestSession(0.095,0.12);
 trace=ctx.Trace; pn_context('set',ctx); guard=onCleanup(@()closeSession(ctx));
 sim(model); ctx.finish();
 assert(ctx.Count==10 && strcmp(ctx.Result.status,'completed'));
@@ -38,6 +40,7 @@ assert(caught && ~trace('enabled') && trace('voltage')==0); clear guard;
 for order=1:2
     model=sprintf('Pendulum_Native_%d',order); load_system(model); set_param(model,'SimulationCommand','update');
 end
+set_param('Pendulum_Native_1/Real-Time Synchronization','Commented','off');
 report=struct('passed',true,'delayed_start_and_first_evaluation',true,'fresh_input_checks',true, ...
     'runtime_timeout_preserved',true,'compute_deadline_preserved',true,'actual_sfun_simulated',true,'physical_io_opened',false);
 save(fullfile(here,'..','output','native_simulink','startup_verification.mat'),'report'); disp(report);

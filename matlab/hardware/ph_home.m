@@ -17,7 +17,11 @@ while true
     s=sample(); assert(~any(s.limits),'pendulum:Limits','Limit during centering.');
     err=center-s.counts(1);
     if abs(err)<=tolerance
-        io.stop(); pause(0.2); s=sample();
+        io.stop();
+        % Keep consuming encoder samples while the cart settles.  A single
+        % 200 ms pause makes legitimate coast motion look like a one-sample
+        % encoder discontinuity against PhIO's unchanged jump threshold.
+        for settleSample=1:40, pause(0.005); s=sample(); end
         if abs(center-s.counts(1))<=tolerance, break; end
     else
         magnitude=0.03;

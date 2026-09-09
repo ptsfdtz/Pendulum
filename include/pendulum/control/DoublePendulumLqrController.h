@@ -104,6 +104,10 @@ public:
 
 private:
     DoublePendulumLqrSettings settings_;
+    double inverseSampleSeconds_{0.0};
+    double velocityFilterAlpha_{0.0};
+    double firstRadiansPerCount_{0.0};
+    double secondRadiansPerCount_{0.0};
     bool initialized_{false};
     double previousX_{0.0};
     double previousTheta1_{0.0};

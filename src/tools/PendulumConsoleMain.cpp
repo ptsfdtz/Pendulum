@@ -132,16 +132,13 @@ public:
     ~PendulumConsole() {
         stopBalance("session closed");
         stopOutputs("session closed");
-        dashboard_.request_stop();
-        if (dashboard_.joinable()) dashboard_.join();
         monitor_.request_stop();
         if (monitor_.joinable()) monitor_.join();
     }
 
     int preview() {
-        previewMode_ = true;
         dashboardMode_ = enableDashboardTerminal();
-        renderDashboard();
+        std::cout << "Preview: output disabled; Q / Esc to return\n";
         if (dashboardMode_) {
             static_cast<void>(readDashboardCommand());
         } else {
@@ -160,11 +157,8 @@ public:
         monitor_ = std::jthread([this](std::stop_token token) { monitor(token); });
         waitForFirstSample();
         dashboardMode_ = enableDashboardTerminal();
-        if (dashboardMode_) {
-            dashboard_ = std::jthread([this](std::stop_token token) { dashboardLoop(token); });
-        } else {
-            renderDashboard();
-        }
+        std::cout << (doubleConfig_ ? "Double" : "Single")
+                  << " control selected; Q / Esc to stop\n";
         // The selected command owns a fixed hardware configuration for this session.
         // Homing and downward-zero capture remain inside the automatic sequence.
         runAutoBalance();
@@ -178,8 +172,6 @@ public:
         }
         stopBalance("operator stop");
         stopOutputs("operator stop");
-        dashboard_.request_stop();
-        if (dashboard_.joinable()) dashboard_.join();
         monitor_.request_stop();
         if (monitor_.joinable()) monitor_.join();
         return safety_.stopRequested() || faultLatched_.load() ? 1 : 0;
@@ -262,45 +254,10 @@ private:
         return std::nullopt;
     }
 
-    void dashboardLoop(std::stop_token stopToken) noexcept {
-        while (!stopToken.stop_requested() && !safety_.stopRequested()) {
-            renderDashboard();
-            std::this_thread::sleep_for(std::chrono::milliseconds(
-                config_.manualConsole.dashboardRefreshMilliseconds));
-        }
-    }
-
-    void renderDashboard() noexcept {
-        try {
-            std::string state = "PREPARING";
-            if (previewMode_) state = "PREVIEW / OUTPUT OFF";
-            else if (faultLatched_.load() || safety_.stopRequested()) state = "FAULT / OUTPUT OFF";
-            else if (homingRunning_.load()) state = "HOMING / ZERO CAPTURE";
-            else if (balanceRunning_.load()) {
-                state = balanceSoftwareLimitActive_.load() ? "TRACK RECOVERY" :
-                    (balanceSwingUpActive_.load() ? "SWING-UP" : "STABILIZING");
-            } else if (pendulumZeroCaptured_.load() || operatorStop_.load()) state = "STOPPED";
-            std::string error;
-            { std::scoped_lock lock(messageMutex_); error = lastMessage_; }
-            std::ostringstream screen;
-            if (dashboardMode_) screen << "\x1b[H";
-            screen << "PendulumLab\n\n"
-                   << (doubleConfig_ ? "2  Double: swing-up + stabilize" : "1  Single: swing-up + stabilize")
-                   << "\nState: " << state << "\n"
-                   << "Q / Esc: stop and return    Ctrl+C: emergency stop\n";
-            if (!error.empty()) screen << "\n" << error << "\n";
-            if (dashboardMode_) screen << "\x1b[J";
-            std::scoped_lock lock(renderMutex_);
-            std::cout << screen.str() << std::flush;
-        } catch (...) {}
-    }
-
     void notify(std::string message, bool error = false) const {
         logger_.log(error ? pendulum::logging::Level::Error : pendulum::logging::Level::Info,
                     "PendulumConsole", message);
-        if (!error) return; // Routine events and controller terms stay in the log.
-        { std::scoped_lock lock(messageMutex_); lastMessage_ = message; }
-        if (!dashboardMode_) std::cerr << message << '\n';
+        if (error) std::cerr << message << '\n';
     }
 
     void initializeHardware() {
@@ -1109,18 +1066,13 @@ private:
     pendulum::safety::SafetyManager::Registration aoRegistration_;
     pendulum::safety::SafetyManager::Registration servoRegistration_;
     std::jthread monitor_;
-    std::jthread dashboard_;
     std::jthread balanceThread_;
     mutable std::mutex outputMutex_;
-    mutable std::mutex messageMutex_;
-    mutable std::mutex renderMutex_;
     mutable std::mutex homingStateMutex_;
     mutable std::mutex pendulumSampleMutex_;
     std::condition_variable pendulumSampleCondition_;
     PendulumSample pendulumSample_;
-    mutable std::string lastMessage_;
     std::string homingState_{"IDLE"};
-    bool previewMode_{false};
     std::atomic<bool> operatorStop_{false};
     std::atomic<bool> dashboardMode_{false};
     std::atomic<bool> sampleReady_{false};

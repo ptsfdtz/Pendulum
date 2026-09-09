@@ -19,6 +19,14 @@ for order=1:2
     add_block('simulink/User-Defined Functions/Level-2 MATLAB S-Function',[model '/Hardware_IO'], ...
         'FunctionName','pn_io_sfun','Parameters',num2str(order), ...
         'Position',[55 150 200 245]);
+    % Use the Desktop Real-Time kernel to pace Normal-mode execution.  The
+    % custom vendor I/O remains in MATLAB, but no longer relies on a Windows
+    % busy-wait loop for the 100/200 Hz sample clock.
+    load_system('sldrtlib'); sync=find_system('sldrtlib','Type','Block','Name','Real-Time Synchronization');
+    add_block(sync{1},[model '/Real-Time Synchronization'], ...
+        'SampleTime',num2str(C.dt(order),17),'MaxMissedTicks','1000000', ...
+        'ShowMissedTicks','off','YieldWhenWaiting','off','Priority','-100', ...
+        'Position',[55 300 200 350]);
     p=[model '/Native_Control']; add_block('built-in/Subsystem',p,'Position',[330 145 550 265]);
     g=PnGraph(p); counts=g.in('Relative_counts',1,order+1); limits=g.in('Physical_limits',2,2);
     warningLimit=g.in('Travel_warning_m',3,1);
@@ -132,8 +140,7 @@ for order=1:2
     add_line(model,'Hardware_IO/3','Native_Control/3','autorouting','on');
     for k=1:3, add_line(model,['Native_Control/' num2str(k)],['I_O_Command/' num2str(k)],'autorouting','on'); end
     add_line(model,'I_O_Command/1','Hardware_IO/1','autorouting','on');
-    runLabel=sprintf('Start with start_pendulum_simulink(%d). Default Run is read-only.',order);
-    if order==1, runLabel='Run: input preflight, home, zero, swing-up and balance. Stop: outputs off.'; end
+    runLabel='Run: input preflight, home, zero, swing-up and balance. Stop: outputs off.';
     note=Simulink.Annotation(model,sprintf('NATIVE PHYSICAL CONTROL | ORDER %d\nTs = %g s    StopTime = inf\n%s\nControl: standard Simulink blocks; Hardware_IO: vendor MATLAB adapter.',order,C.dt(order),runLabel));
     note.Position=[45 30];
     g.organize();

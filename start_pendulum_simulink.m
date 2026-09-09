@@ -15,7 +15,19 @@ if ~isfile(fullfile(root,'matlab','native_simulink',[model '.slx'])), pn_build()
 load_system(model); set_param(model,'StopTime','inf');
 if strcmp(mode,'hardware')
     % Exercise the actual native controller and input scheduling before motion.
-    pre=execute('readonly',2);
+    % Run long enough to warm the complete S-function and native graph in
+    % this MATLAB process before a separate hardware session can arm. A
+    % timing-only failure may be retried while outputs remain unopened.
+    for attempt=1:3
+        try
+            pre=execute('readonly',5); break;
+        catch err
+            timing=contains(getReport(err),'pendulum:Timing') || any( ...
+                contains(err.message,{'control computation exceeded','control deadline','sample timeout'},'IgnoreCase',true));
+            if ~timing || attempt==3, rethrow(err); end
+            fprintf('Read-only preflight timing retry %d/3; outputs remain disabled.\n',attempt+1);
+        end
+    end
     assert(strcmp(pre.status,'completed'),'pendulum:Preflight','Native read-only preflight failed.');
 end
 result=execute(mode,duration);

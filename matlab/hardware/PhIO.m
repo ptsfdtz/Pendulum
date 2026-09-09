@@ -2,7 +2,7 @@ classdef PhIO < handle
     % Vendor .NET adapter. Constructor defaults to input-only operation.
     properties (Access=private)
         C; tasks = {}; counters = {}; limits = {}; writer = []; ao = [];
-        lastRaw = []; counts = []; enabled = false;
+        lastRaw = []; counts = []; enabled = false; readClock = [];
     end
     methods
         function obj = PhIO(C,order)
@@ -32,14 +32,22 @@ classdef PhIO < handle
             end
         end
         function s=read(obj)
+            if isempty(obj.readClock), readGap=0; else, readGap=toc(obj.readClock); end
+            obj.readClock=tic;
             raw=zeros(1,numel(obj.counters));
             for k=1:numel(raw), raw(k)=double(obj.counters{k}.ReadSingleSampleUInt32()); end
             if isempty(obj.lastRaw)
                 obj.counts=zeros(size(raw));
             else
                 delta=mod(raw-obj.lastRaw+2^31,2^32)-2^31;
-                assert(all(abs(delta)<=obj.C.jump(1:numel(raw))), ...
-                    'pendulum:EncoderJump','Encoder discontinuity.');
+                baseLimit=obj.C.jump(1:numel(raw));
+                % C.jump is a per-fast-sample rate limit. Preserve that
+                % rate when initialization or homing creates a longer gap.
+                scale=max(1,ceil(readGap/min(obj.C.dt)));
+                limit=baseLimit*scale;
+                assert(all(abs(delta)<=limit), 'pendulum:EncoderJump', ...
+                    'Encoder discontinuity after %.3f ms: raw=%s previous=%s delta=%s limits=%s.', ...
+                    1000*readGap,mat2str(raw),mat2str(obj.lastRaw),mat2str(delta),mat2str(limit));
                 obj.counts=obj.counts+delta;
             end
             obj.lastRaw=raw;
