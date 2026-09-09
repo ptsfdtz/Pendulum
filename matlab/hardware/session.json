@@ -1,0 +1,63 @@
+{
+    "objective":  "MATLAB-only physical single/double swing-up using installed vendor .NET drivers",
+    "known":  [
+                  "Physical apparatus requested; vendor drivers allowed"
+              ],
+    "discovered":  [
+                       "MATLAB R2021a",
+                       "NI PCI-6602 Dev1 and PCI-1723 BID15 enumerated",
+                       "NI .NET timeout uses integer milliseconds"
+                   ],
+    "artifacts":  [
+                      "start_pendulum.m",
+                      "matlab/run_hardware.m",
+                      "matlab/hardware/PhIO.m",
+                      "matlab/hardware/ph_control.m",
+                      "matlab/hardware/ph_home.m",
+                      "matlab/hardware/PhRunRecord.m"
+                  ],
+    "tests":  {
+                  "controller_regression":  "passed",
+                  "mock_homing_zero_timeout":  "passed",
+                  "exception_cleanup":  "passed",
+                  "simulated_output_api":  "passed",
+                  "real_inputs_single_200_samples":  "passed",
+                  "real_inputs_double_400_samples":  "passed",
+                  "ideal_single_double_swingup":  "passed",
+                  "timing_single_max_compute_seconds":  0.0007746,
+                  "timing_double_max_compute_seconds":  0.0058
+              },
+    "attempts":  [
+                     {
+                         "issue":  "NI resource reserved -50103",
+                         "resolution":  "user exited old console"
+                     },
+                     {
+                         "issue":  "NI read timeout -200474",
+                         "resolution":  "converted 0.05 seconds to integer 50 milliseconds"
+                     },
+                     {
+                         "issue":  "nested onCleanup up-level state analyzer warning",
+                         "resolution":  "moved cleanup state to dedicated handle class; injected exception test passed"
+                     }
+                 ],
+    "hardware_motion_verified":  false,
+    "physical_outputs_written":  false,
+    "status":  "source migration and non-motion validation complete; physical commissioning pending",
+    "unresolved":  [
+                       "200 Hz Windows/MATLAB jitter occasionally exceeds 5 ms; runtime aborts on deadline violation",
+                       "actual AO, homing, and physical single/double swing-up require supervised authorized validation",
+                       "software cleanup cannot cover forced termination or blocked MATLAB process"
+                   ],
+    "startup_fix":  {
+                        "cause":  "Cold driver/JIT read was included in strict 5 ms acceptance",
+                        "warmup_samples":  100,
+                        "measured_samples":  200,
+                        "warmup_max_seconds":  0.01989,
+                        "measured_max_seconds":  0.00087,
+                        "overruns":  0,
+                        "slow_input_rejection":  "passed",
+                        "cleanup_regression":  "passed",
+                        "physical_outputs_written":  false
+                    }
+}

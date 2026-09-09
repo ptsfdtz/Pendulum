@@ -1,10 +1,12 @@
-function report = verify_pendulum()
-%VERIFY_PENDULUM Check all four scenarios in both offline engines.
+function report = verify_pendulum(engines)
+%VERIFY_PENDULUM Base MATLAB by default; optionally pass {'numeric','simulink'}.
+if nargin<1, engines={'numeric'}; end
+if ischar(engines), engines={engines}; end
 root = setup_pendulum();
 originalFolder = pwd; restoreFolder = onCleanup(@() cd(originalFolder));
 cd(fileparts(root)); % Verify that current directory need not be a model folder.
 report = struct([]); index = 0;
-for engine = {'numeric','simulink'}
+for engine = engines
     for order = {'single','double'}
         for scenario = {'swingup','balance'}
             r = run_pendulum(order{1},scenario{1},struct('engine',engine{1}, ...
@@ -25,5 +27,5 @@ fid = fopen(fullfile(root,'output','verification.json'),'w');
 cleanup = onCleanup(@() fclose(fid));
 fprintf(fid,'%s',jsonencode(report));
 assert(all([report.passed]),'pendulum:ValidationFailed','An offline scenario failed.');
-fprintf('ALL_EIGHT_OFFLINE_SCENARIOS_PASSED\n');
+fprintf('ALL_%d_OFFLINE_SCENARIOS_PASSED\n',index);
 end

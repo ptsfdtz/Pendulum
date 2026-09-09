@@ -57,6 +57,13 @@ DoublePendulumLqrController::DoublePendulumLqrController(
     DoublePendulumLqrSettings settings)
     : settings_(std::move(settings)) {
     validate(settings_);
+    inverseSampleSeconds_ = 1.0 / settings_.sampleSeconds;
+    velocityFilterAlpha_ = std::exp(
+        -2.0 * std::numbers::pi * settings_.velocityFilterHz * settings_.sampleSeconds);
+    firstRadiansPerCount_ = 2.0 * std::numbers::pi /
+                            static_cast<double>(settings_.firstCountsPerRevolution);
+    secondRadiansPerCount_ = 2.0 * std::numbers::pi /
+                             static_cast<double>(settings_.secondCountsPerRevolution);
 }
 
 void DoublePendulumLqrController::reset() noexcept {
@@ -121,11 +128,9 @@ DoublePendulumLqrOutput DoublePendulumLqrController::update(
     out.cartPositionMeters =
         -static_cast<double>(cartRelativeCounts) * settings_.cartMetersPerCount;
     out.firstAngleRadians = wrapToPi(
-        -static_cast<double>(firstRelativeCounts) * 2.0 * std::numbers::pi /
-        static_cast<double>(settings_.firstCountsPerRevolution));
+        -static_cast<double>(firstRelativeCounts) * firstRadiansPerCount_);
     const double relativeSecondAngle = wrapToPi(
-        -static_cast<double>(secondRelativeCounts) * 2.0 * std::numbers::pi /
-        static_cast<double>(settings_.secondCountsPerRevolution));
+        -static_cast<double>(secondRelativeCounts) * secondRadiansPerCount_);
     out.secondAngleRadians = wrapToPi(out.firstAngleRadians + relativeSecondAngle);
 
     if (!initialized_) {
@@ -134,14 +139,13 @@ DoublePendulumLqrOutput DoublePendulumLqrController::update(
         previousTheta2_ = out.secondAngleRadians;
         initialized_ = true;
     }
-    const double alpha = std::exp(-2.0 * std::numbers::pi *
-                                  settings_.velocityFilterHz * settings_.sampleSeconds);
-    filteredXdot_ = alpha * filteredXdot_ + (1.0 - alpha) *
-        (out.cartPositionMeters - previousX_) / settings_.sampleSeconds;
-    filteredTheta1dot_ = alpha * filteredTheta1dot_ + (1.0 - alpha) *
-        wrapToPi(out.firstAngleRadians - previousTheta1_) / settings_.sampleSeconds;
-    filteredTheta2dot_ = alpha * filteredTheta2dot_ + (1.0 - alpha) *
-        wrapToPi(out.secondAngleRadians - previousTheta2_) / settings_.sampleSeconds;
+    const double filterInputGain = (1.0 - velocityFilterAlpha_) * inverseSampleSeconds_;
+    filteredXdot_ = velocityFilterAlpha_ * filteredXdot_ + filterInputGain *
+        (out.cartPositionMeters - previousX_);
+    filteredTheta1dot_ = velocityFilterAlpha_ * filteredTheta1dot_ + filterInputGain *
+        wrapToPi(out.firstAngleRadians - previousTheta1_);
+    filteredTheta2dot_ = velocityFilterAlpha_ * filteredTheta2dot_ + filterInputGain *
+        wrapToPi(out.secondAngleRadians - previousTheta2_);
     out.cartVelocityMetersPerSecond = filteredXdot_;
     out.firstAngularRateRadiansPerSecond = filteredTheta1dot_;
     out.secondAngularRateRadiansPerSecond = filteredTheta2dot_;

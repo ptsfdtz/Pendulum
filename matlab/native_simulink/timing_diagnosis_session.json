@@ -1,0 +1,36 @@
+{
+  "objective": "Diagnose intermittent 100 Hz native Simulink control timeouts without changing controller mathematics or hardware safety behavior.",
+  "acceptance_tests": [
+    "Identify the complete Outputs-to-Update and inter-sample execution path.",
+    "Instrument read, control/Outputs-to-Update, write, sample interval, and lateness with bounded preallocated logging.",
+    "Report max, mean, P95, and P99 and give evidence-based classification criteria."
+  ],
+  "environment": {
+    "sample_period_seconds": 0.01,
+    "timeout_seconds": 0.05,
+    "hardware": ["NI PCI-6602", "PCI-1723"],
+    "status": "static inspection in progress; no hardware actuation authorized or performed"
+  },
+  "current_hypotheses": [
+    "control path exceeds its 10 ms budget",
+    "vendor hardware I/O occasionally blocks",
+    "MATLAB/Simulink/Windows scheduling creates an inter-sample gap"
+  ],
+  "changes": [
+    "Added bounded preallocated timing and telemetry buffers to PnHardwareSession.",
+    "Moved telemetry file writes after hardware stop/delete.",
+    "Added end-of-run max/mean/P95/P99 summary and timing.mat output."
+  ],
+  "evidence": [
+    "Both models are fixed-step discrete; order 1 uses 0.01 s and normal simulation mode.",
+    "Native_Control order 1 contains 191 standard arithmetic/discrete blocks and no MATLAB Function, S-Function, Scope, Display, or To Workspace block.",
+    "Historical 27-sample mock fault: max compute 6.908 ms, final lateness 20.951 ms; therefore not a 10 ms controller overrun.",
+    "Historical 623-sample hardware fault: max compute 8.668 ms, final compute 4.487 ms, final lateness 18.874 ms.",
+    "Historical successful 3000-sample hardware run: compute mean 0.826 ms, P99 1.476 ms, max 9.333 ms, max lateness 1.202 ms.",
+    "pn_verify_startup passed with physical_io_opened=false after instrumentation."
+    ,"Physical run tp213bddf5_13a0_461a_ba21_8985935e1c71: sample 26 finished in 0.468 ms and 9.311 ms before its deadline; sample 27 entered Outputs after a 92.630 ms interval with 82.631 ms lateness, before IO.read began."
+  ],
+  "unresolved": [
+    "The physical run excludes controller and vendor I/O latency for this fault; a hard-real-time execution host is required to guarantee 100 Hz."
+  ]
+}
