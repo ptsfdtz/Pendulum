@@ -96,9 +96,9 @@ verify_pendulum({'numeric','simulink'}); % 数值与 Simulink 对照
 - `matlab/native_simulink/Pendulum_Native_1.slx`
 - `matlab/native_simulink/Pendulum_Native_2.slx`
 
-然后修改 `Native_Control` 内部，不需要调整编码器、限位、板卡输出或顶层接线。
+然后修改 `Control` 内部：输入为角度1/角度2（度）、位置（m）、左右限位 `[left right]` 和自动使能状态 `Servo`；唯一输出为加速度（m/s²）。左侧 `Hardware` 负责回中标零、传感器换算、加速度到电压的速度环和输出保护。
 
-> `pn_build` 会重新生成原始控制图。直接修改并保存 `.slx` 后，不要运行 `pn_build` 或默认的 `pn_verify()`，否则算法可能被覆盖。验证已保存模型应使用 `pn_verify(false)`。
+> `pn_build` 会覆盖两份模型并恢复内置算法。`pn_verify()` 默认不重建，检查已保存模型的内置算法回归与接口保护；自定义算法不必满足内置算法数值回归。
 
 ## 实机运行
 
@@ -177,7 +177,7 @@ PendulumLab/
 → 数值仿真
 → 全场景验证
 → Simulink 对照
-→ 修改 Native_Control
+→ 修改 Control
 → 只读硬件预检
 → 有限时间实机测试
 ```

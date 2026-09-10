@@ -1,8 +1,6 @@
 function report=pn_verify_startup()
 % Reproduce Start-to-Outputs and first-evaluation delays without physical I/O.
 here=fileparts(mfilename('fullpath')); addpath(here,fullfile(here,'tests'),fullfile(here,'..','hardware'));
-saved=load(fullfile(here,'..','output','native_simulink','tp2afa237e_9111_4e1f_b2d1_a645c2d3cde7','run.mat'));
-assert(saved.result.samples==0 && contains(saved.result.error,'Control sample timeout'));
 % Exercise the actual S-function + native graph after a delayed Start callback.
 model='Pendulum_Native_1'; load_system(model);
 sync=[model '/Real-Time Synchronization']; set_param(sync,'Commented','on');

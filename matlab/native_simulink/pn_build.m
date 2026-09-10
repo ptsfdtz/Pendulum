@@ -1,7 +1,6 @@
 function models=pn_build()
-%PN_BUILD Native physical controllers. MATLAB is used only to construct graphs.
-% Control graph: count conversion -> state estimation -> stages -> acceleration
-% -> original discrete PI/integrator ordering -> travel/limit safety.
+%PN_BUILD Replace the two models with the five-input, acceleration-only interface.
+% Hardware owns sensor conversion, automatic servo, PI and independent safety.
 here=fileparts(mfilename('fullpath')); addpath(here,fullfile(here,'..','hardware'));
 C=ph_config(); models=cell(1,2);
 load_system('simulink');
@@ -16,9 +15,7 @@ for order=1:2
     paths=sprintf(['addpath(fileparts(get_param(''%s'',''FileName'')),' ...
         'fullfile(fileparts(get_param(''%s'',''FileName'')),''..'',''hardware''));'],model,model);
     set_param(model,'PostLoadFcn',paths,'InitFcn',paths);
-    add_block('simulink/User-Defined Functions/Level-2 MATLAB S-Function',[model '/Hardware_IO'], ...
-        'FunctionName','pn_io_sfun','Parameters',num2str(order), ...
-        'Position',[55 150 200 245]);
+    pn_build_hardware(model,order,C);
     % Use the Desktop Real-Time kernel to pace Normal-mode execution.  The
     % custom vendor I/O remains in MATLAB, but no longer relies on a Windows
     % busy-wait loop for the 100/200 Hz sample clock.
@@ -26,24 +23,23 @@ for order=1:2
     add_block(sync{1},[model '/Real-Time Synchronization'], ...
         'SampleTime',num2str(C.dt(order),17),'MaxMissedTicks','1000000', ...
         'ShowMissedTicks','off','YieldWhenWaiting','off','Priority','-100', ...
-        'Position',[55 300 200 350]);
-    p=[model '/Native_Control']; add_block('built-in/Subsystem',p,'Position',[330 145 550 265]);
-    g=PnGraph(p); counts=g.in('Relative_counts',1,order+1); limits=g.in('Physical_limits',2,2);
-    warningLimit=g.in('Travel_warning_m',3,1);
+        'Position',[120 465 350 515]);
+    p=[model '/Control']; add_block('built-in/Subsystem',p,'Position',[550 140 790 410]);
+    g=PnGraph(p); angle1=g.in('Angle1_deg',1,1); angle2=g.in('Angle2_deg',2,1);
+    x=g.in('Position_m',3,1); limits=g.in('Limits_left_right',4,2); servo=g.in('Servo',5,1);
     g.section('Sensor_and_memory');
-    z=g.c(0); one=g.c(1); cs=g.split(counts,order+1);
+    z=g.c(0); one=g.c(1);
     % Delay states exactly match the initial ph_control struct.
     q0=g.delay('Previous_position',0); a0=g.delay('Previous_angle1',0);
-    vr0=g.delay('Velocity_integrator',0); int0=g.delay('PI_integrator',0);
-    x=g.gain(cs{1},-C.cartScale(order));
-    a=g.wrap(g.div(g.gain(cs{2},-2*pi),g.c(C.countsPerRev(1))));
+    a=g.gain(angle1,pi/180);
     if order==1
-        enc=g.div(g.gain(cs{2},2*pi),g.c(8000)); enc0=g.delay('Previous_encoder_rad',0);
+        g.block('Sinks/Terminator','Unused_second_angle',{angle2});
+        enc=g.gain(a,-1); enc0=g.delay('Previous_encoder_rad',0);
         velocity=g.div(g.sub(x,q0),g.c(C.dt(1))); omega=g.div(g.sub(a,a0),g.c(C.dt(1)));
         b=z; omega2=z;
         g.section('Swingup_and_LQR');
         lqr=g.sat(g.add(g.gain(x,10),g.gain(velocity,12.23),g.gain(a,-58.6),g.gain(omega,-10.69)),-10,10);
-        delta=g.sub(enc,enc0);
+        delta=g.wrap(g.sub(enc,enc0));
         energy=g.add(g.gain(g.sub(one,g.trig(enc,'cos')),0.134*9.8*0.223),g.gain(g.mul(delta,delta),0.0089/0.0002));
         domain=g.sub(one,g.gain(g.abs(x),0.8/0.25));
         % Clamp the log input only on the already-faulted path, avoiding complex
@@ -52,18 +48,9 @@ for order=1:2
             g.gain(g.sign(g.mul(g.trig(enc,'cos'),delta,g.sub(g.c(2*0.134*9.8*0.223),energy))),5)),-10,10);
         swingMode=g.cmp(g.abs(a),'>=',g.c(pi/6)); stage=g.choose(swingMode,one,g.c(2));
         u=g.choose(swingMode,swing,lqr);
-        g.section('Acceleration_to_voltage');
-        vf0=g.delay('Velocity_free',0); if0=g.delay('Integral_free',0);
-        gate=g.logic('OR',vf0,g.logic('XOR',g.cmp(vr0,'<=',z),g.cmp(u,'<=',z)));
-        vrRaw=g.add(vr0,g.mul(g.gain(u,0.005),gate)); vref=g.sat(vrRaw,-0.6,0.6);
-        e=g.sub(vref,velocity);
-        igate=g.logic('OR',if0,g.logic('XOR',g.cmp(int0,'<=',z),g.cmp(e,'<=',z)));
-        integral=g.add(int0,g.mul(g.gain(g.gain(e,0.005),54),igate));
-        voltage=g.sat(g.add(g.gain(e,0.18),integral),-1,1);
-        nextVr=vrRaw; nextInt=integral; vfree=g.cmp(vrRaw,'==',vref);
         g.bind(enc0,enc);
     else
-        b=g.wrap(g.sub(a,g.div(g.gain(cs{3},2*pi),g.c(C.countsPerRev(2)))));
+        b=g.gain(angle2,pi/180);
         b0=g.delay('Previous_angle2',0); initialized=g.delay('Initialized',0);
         vel0=g.delay('Filtered_cart_rate',0); om0=g.delay('Filtered_rate1',0); om20=g.delay('Filtered_rate2',0);
         alpha=exp(-2*pi*20*C.dt(2));
@@ -80,8 +67,6 @@ for order=1:2
         stage=g.choose(g.logic('AND',is1,g.cmp(g.abs(a),'<=',g.c(0.37)),g.cmp(g.abs(omega),'<=',g.c(2))),g.c(2),stage);
         stage=g.choose(g.logic('AND',is3,g.cmp(g.abs(b),'>',g.c(20*pi/180))),g.c(2),stage);
         stage=g.choose(g.logic('AND',is3,g.cmp(g.abs(a),'>',g.c(23*pi/180))),one,stage);
-        leave3=g.logic('AND',is3,g.cmp(stage,'~=',g.c(3)));
-        vrStart=g.choose(leave3,velocity,vr0); intStart=g.choose(leave3,z,int0);
         g.section('Swingup_and_LQR');
         energy=g.add(g.gain(g.mul(omega,omega),0.5*0.005160863235),g.gain(g.sub(g.trig(a,'cos'),one),0.3534*9.81*0.12));
         sigma=g.sub(g.c(pi),g.abs(a));
@@ -107,43 +92,46 @@ for order=1:2
         stoppingDistance=g.gain(g.minmax('max',g.sub(g.c(0.30-0.015),g.abs(x)),g.c(0.005)),2);
         braking=g.mul(g.gain(g.sign(x),-1),g.sat(g.div(g.mul(velocity,velocity),stoppingDistance),2,30));
         u=g.sat(g.choose(brake,braking,u),-30,30);
-        g.section('Acceleration_to_voltage');
-        vref=g.sat(g.add(vrStart,g.gain(u,C.dt(2))),-0.6,0.6);
-        e=g.sub(vref,velocity); candidate=g.add(intStart,g.gain(e,C.dt(2)));
-        raw=g.add(g.c(C.stationaryVoltage),g.gain(e,0.18),g.gain(candidate,54));
-        voltage=g.sat(raw,-1,1);
-        accept=g.logic('OR',g.cmp(raw,'==',voltage),g.logic('XOR',g.cmp(e,'<',z),g.cmp(g.sub(raw,voltage),'<',z)));
-        nextInt=g.choose(accept,candidate,intStart); nextVr=vref;
         g.bind(b0,b); g.bind(initialized,one); g.bind(vel0,velocity); g.bind(om0,omega); g.bind(om20,omega2); g.bind(st0,stage);
     end
-    g.section('Travel_and_faults');
-    reset=g.logic('AND',g.cmp(g.abs(x),'>=',warningLimit),g.cmp(g.mul(x,voltage),'>',z));
-    if order==1, recovery=z; else, recovery=g.gain(g.sign(x),-0.03); end
-    applied=g.choose(reset,recovery,voltage);
-    g.bind(vr0,g.choose(reset,z,nextVr)); g.bind(int0,g.choose(reset,z,nextInt));
-    if order==1
-        g.bind(vf0,g.choose(reset,z,vfree)); g.bind(if0,g.choose(reset,z,one));
-    end
+    g.section('Output_guard');
     g.bind(q0,x); g.bind(a0,a);
     ls=g.split(limits,2);
     fault=g.logic('OR',ls{1},ls{2},g.cmp(g.abs(x),'>=',g.c(C.positionStop(order))));
-    values=g.mux(x,a,b,velocity,omega,omega2,voltage,u);
+    values=g.mux(x,a,b,velocity,omega,omega2,u,servo);
     finite=g.cmp(g.abs(values),'<',g.c(inf));
     allFinite=g.block('Logic and Bit Operations/Logical Operator','AllFinite',{finite},'Operator','AND','Inputs','1');
     fault=g.logic('OR',fault,g.logic('NOT',allFinite));
     g.section('');
-    g.out('Voltage_V',1,g.choose(fault,z,applied)); g.out('Fault',2,g.double(fault));
-    g.out('Telemetry',3,g.mux(x,a,b,velocity,omega,omega2,u,voltage,stage,vref,g.double(reset)));
-    add_block('simulink/Signal Routing/Mux',[model '/I_O_Command'],'Inputs','3','Position',[625 150 630 250]);
-    add_line(model,'Hardware_IO/1','Native_Control/1','autorouting','on');
-    add_line(model,'Hardware_IO/2','Native_Control/2','autorouting','on');
-    add_line(model,'Hardware_IO/3','Native_Control/3','autorouting','on');
-    for k=1:3, add_line(model,['Native_Control/' num2str(k)],['I_O_Command/' num2str(k)],'autorouting','on'); end
-    add_line(model,'I_O_Command/1','Hardware_IO/1','autorouting','on');
+    g.out('Acceleration_m_s2',1,g.choose(g.logic('AND',g.cmp(servo,'==',one),g.logic('NOT',fault)),u,z));
+    % Local logging is optional and is never consumed by the hardware adapter.
+    g.block('Sinks/To Workspace','Stage_log',{stage},'VariableName','pn_stage','SaveFormat','Array');
+    for k=1:5
+        line=add_line(model,['Hardware/' num2str(k)],['Control/' num2str(k)],'autorouting','on');
+        labels={'Angle1 (deg)','Angle2 (deg)','Position (m)','Limits [left right]','Servo (0 / 1)'};
+        set_param(line,'Name',labels{k});
+    end
+    line=add_line(model,'Control/1','Hardware/1','autorouting','on'); set_param(line,'Name','Acceleration (m/s^2)');
     runLabel='Run: input preflight, home, zero, swing-up and balance. Stop: outputs off.';
-    note=Simulink.Annotation(model,sprintf('NATIVE PHYSICAL CONTROL | ORDER %d\nTs = %g s    StopTime = inf\n%s\nControl: standard Simulink blocks; Hardware_IO: vendor MATLAB adapter.',order,C.dt(order),runLabel));
+    note=Simulink.Annotation(model,sprintf('PENDULUM | ORDER %d   |   Ts = %g s\n%s',order,C.dt(order),runLabel));
     note.Position=[45 30];
     g.organize();
+    blocks=find_system(p,'SearchDepth',1,'Type','Block'); core=[];
+    for j=2:numel(blocks)
+        if ~ismember(get_param(blocks{j},'BlockType'),{'Inport','Outport','ToWorkspace'})
+            core(end+1)=get_param(blocks{j},'Handle'); %#ok<AGROW>
+        end
+    end
+    Simulink.BlockDiagram.createSubsystem(core,'Name','Swingup_and_balance');
+    Simulink.BlockDiagram.arrangeSystem([p '/Swingup_and_balance']);
+    Simulink.BlockDiagram.arrangeSystem(p);
+    subs=find_system(model,'BlockType','SubSystem');
+    for j=1:numel(subs), set_param(subs{j},'ContentPreviewEnabled','off'); end
+    for sub={'Hardware','Control'}
+        path=[model '/' sub{1}];
+        ports=[find_system(path,'SearchDepth',1,'BlockType','Inport'); find_system(path,'SearchDepth',1,'BlockType','Outport')];
+        for j=1:numel(ports), set_param(ports{j},'Name',regexprep(get_param(ports{j},'Name'),'_\d+$','')); end
+    end
     set_param(model,'ZoomFactor','FitSystem');
     save_system(model,fullfile(here,[model '.slx']));
 end

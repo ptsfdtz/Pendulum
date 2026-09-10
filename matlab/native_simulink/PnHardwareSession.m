@@ -16,6 +16,8 @@ classdef PnHardwareSession < handle
             obj.Folder=tempname(base); mkdir(obj.Folder);
             obj.Reference=zeros(1,order+1); obj.Warning=obj.C.positionWarning(order);
             obj.Result=struct('order',order,'mode',mode,'status','initializing','config',obj.C,'hardware_swingup_verified',false);
+            obj.Result.interface_version=2;
+            obj.Result.stage_source='Control/pn_stage (local simulation log); hardware stage column is 0';
             % Keep all deterministic-loop telemetry in RAM.  Ten minutes is
             % bounded and only about 27 MB at the 200 Hz double-pendulum rate.
             seconds=duration; if ~isfinite(seconds), seconds=600; end
@@ -180,8 +182,9 @@ classdef PnHardwareSession < handle
                         'p95',values(max(1,ceil(0.95*n))),'p99',values(max(1,ceil(0.99*n))));
                 end
                 timing_columns=names; save(fullfile(obj.Folder,'timing.mat'),'timing','timing_columns');
-                obj.Result.hardware_swingup_verified=strcmp(obj.Mode,'hardware') && strcmp(obj.Result.status,'completed') && ...
-                    obj.Result.settled && all(ismember(1:obj.Order+1,obj.Result.stages_visited));
+                % The one-signal algorithm interface does not report stages.
+                % Settling remains measurable, but does not prove a swing-up.
+                obj.Result.hardware_swingup_verified=false;
             end
             result=obj.Result; save(fullfile(obj.Folder,'run.mat'),'result');
             fprintf('Native session %s; %d samples; outputs released. %s\n',result.status,obj.Count,obj.Folder);
