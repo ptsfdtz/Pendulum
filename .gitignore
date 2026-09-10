@@ -15,3 +15,4 @@ __pycache__/
 /matlab/**/slprj/
 /matlab/**/*.slxc
 /matlab/**/*.asv
+/matlab/**/*.autosave
